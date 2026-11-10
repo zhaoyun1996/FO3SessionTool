@@ -205,7 +205,7 @@ public sealed class UpgradeRunner
     /// Enhance with retries. When a call fails, wait, then look at the storage: if the merge was in fact applied
     /// (main card already at the new grade, material gone) count it as done instead of merging again.
     /// </summary>
-    private async Task<bool> EnhanceWithRecoveryAsync(string main, string mat, int lvl, int step, double pace, CancellationToken ct)
+    internal async Task<bool> EnhanceWithRecoveryAsync(string main, string mat, int lvl, int step, double pace, CancellationToken ct)
     {
         string lastRaw = "";
         for (int attempt = 1; attempt <= MaxEnhanceTries; attempt++)
