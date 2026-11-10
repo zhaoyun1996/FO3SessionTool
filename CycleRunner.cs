@@ -3,15 +3,17 @@ namespace FO3SessionTool;
 /// <summary>
 /// Settings of the loop. The cards of the target level pile up until their total value reaches TradeMin, then they are all traded
 /// (never more than TradeMax, the game's limit per trade). MaxLossRounds: stop after that many trades in a row that ended
-/// with less EP than the interval before them started with.
+/// with less EP than the interval before them started with. StorageSlots: size of the card storage (200 in the game); when it is
+/// full and nothing can be merged or traded any more, the run stops.
 /// </summary>
-public sealed record CycleOptions(long TradeMin = 900_000_000, long TradeMax = 1_000_000_000, int MaxLossRounds = 2);
+public sealed record CycleOptions(long TradeMin = 900_000_000, long TradeMax = 1_000_000_000, int MaxLossRounds = 2, int StorageSlots = 200);
 
-/// <summary>One trade round: everything from the previous trade (or the start) up to and including this trade.</summary>
-public sealed record RoundStat(int Round, int Bought, int Merged, int Cards, long CardValue, long EpBefore, long EpAfter, long ReceivedPlayerPrice)
+/// <summary>One trade round: the cost of the cards of one batch against what the trade of that batch paid.</summary>
+public sealed record RoundStat(int Round, int Bought, int Merged, int Cards, long CardValue, long Cost, long IncomeEp, long ReceivedPlayerPrice)
 {
-    /// <summary>EP gained (or lost) over the round, counting the value of the player received in the trade.</summary>
-    public long Net => EpAfter - EpBefore + ReceivedPlayerPrice;
+    /// <summary>Cost = EP spent on buying and merging the cards of this batch (counted from the previous batch being taken out
+    /// to this one). Income = EP of the chosen offer. Net counts the value of the player received too.</summary>
+    public long Net => IncomeEp + ReceivedPlayerPrice - Cost;
 }
 
 /// <summary>
@@ -45,10 +47,12 @@ public sealed class CycleRunner
     private Dictionary<int, List<string>> _pool = new();   // level -> card ids free to use (not reserved by a merge or a trade)
     private int[] _need = Array.Empty<int>();              // +1 cards one card of each level is worth
     private int _inFlight;                                 // +1 equivalents inside merges running right now
+    private int _cardCount;                                // cards in the storage (all of them, lineup included)
+    private DateTime? _fullSince;
     private long _targetValue;                             // value of one target-level card (from the storage), 0 = unknown
     private long _lastFee;
     private int _bought, _merged, _tradesDone;
-    private long _totalNet, _roundStartEp;
+    private long _totalNet, _spent, _spentAtReserve;
     private int _round1 = 1, _roundBought, _roundMerged, _lossStreak;
     private DateTime _lastActivity = DateTime.UtcNow;
     private string _buyBlock = "";                         // why the buyer cannot buy right now ("" = not blocked)
@@ -77,7 +81,7 @@ public sealed class CycleRunner
         var tok = _stop.Token;
         _reason = null;
         _bought = _merged = _tradesDone = _roundBought = _roundMerged = _lossStreak = _inFlight = 0;
-        _round1 = 1; _totalNet = 0; _targetValue = 0; _lastFee = 0; _buyBlock = ""; _buyBlockedEp = false;
+        _round1 = 1; _totalNet = 0; _spent = _spentAtReserve = 0; _targetValue = 0; _lastFee = 0; _buyBlock = ""; _buyBlockedEp = false;
         _lastActivity = DateTime.UtcNow;
         double pace = plan.Pace;
 
@@ -91,20 +95,21 @@ public sealed class CycleRunner
             var (valid, detail) = await _api.CheckSessionAsync(tok);
             if (!valid) return $"Phiên đã hết hạn ({detail}). Hãy đăng nhập lại.";
             await _api.GetWalletAsync(tok);
-            _roundStartEp = Ep();
+            _spent = _spentAtReserve = 0;
 
             // starting stock: every usable card of this player (outside the lineup)
             var inv = await _api.GetInventoryAsync(tok);
+            _cardCount = inv.Count;
             _pool = Enumerable.Range(1, plan.Target).ToDictionary(l => l, _ => new List<string>());
             foreach (var c in inv.Where(c => c.Spid == plan.Spid && c.Group == GameApi.GroupNone && c.Grade >= 1 && c.Grade <= plan.Target)) _pool[c.Grade].Add(c.Id);
             LearnTargetValue(inv, plan);
             _cap = Capacity(plan, opt);
             var have = Enumerable.Range(1, plan.Target).Where(l => _pool[l].Count > 0).Select(l => $"{_pool[l].Count}×+{l}");
-            _log($"[Xoay vòng] Bắt đầu song song Mua / Ép / Giao dịch. EP {Ep():N0}. Thẻ có sẵn: {(have.Any() ? string.Join(", ", have) : "không")}. " +
+            _log($"[Xoay vòng] Bắt đầu song song Mua / Ép / Giao dịch. EP {Ep():N0}. Thẻ có sẵn: {(have.Any() ? string.Join(", ", have) : "không")}. Kho {_cardCount}/{opt.StorageSlots}. " +
                  $"Đổi khi tổng thẻ +{plan.Target} đạt {opt.TradeMin:N0}–{opt.TradeMax:N0} EP; dừng sau {opt.MaxLossRounds} lần giao dịch lỗ liên tiếp.");
 
             await Task.WhenAll(
-                Loop("Mua", () => BuyOnce(plan, pace, tok), tok),
+                Loop("Mua", () => BuyOnce(plan, opt, pace, tok), tok),
                 Loop("Ép", () => MergeOnce(plan, pace, tok), tok),
                 Loop("Giao dịch", () => TradeOnce(plan, opt, pace, tok), tok),
                 Loop("Giám sát", () => SuperviseOnce(plan, opt, tok), tok));
@@ -165,8 +170,16 @@ public sealed class CycleRunner
     private int _buyFailures;
     private DateTime? _waitFreeSince;
 
-    private async Task BuyOnce(UpgradePlan plan, double pace, CancellationToken tok)
+    private async Task BuyOnce(UpgradePlan plan, CycleOptions opt, double pace, CancellationToken tok)
     {
+        if (_cardCount >= opt.StorageSlots)
+        {
+            // full storage: buying is impossible; merging / trading will free slots, the supervisor stops the run when nothing can
+            _buyBlock = $"Kho đã đầy ({_cardCount}/{opt.StorageSlots}).";
+            _buyBlockedEp = false;
+            await Pacing.Wait(2, 4, pace, tok);
+            return;
+        }
         // capacity is read in SuperviseOnce-independent way: the buyer asks for it here
         if (Pipeline() >= _cap)
         {
@@ -225,7 +238,9 @@ public sealed class CycleRunner
         }
         _buyFailures = 0; _waitFreeSince = null;
         if (!_api.LastHadMoney) _api.Spend(cheapest.Price);
+        Interlocked.Add(ref _spent, cheapest.Price);
         lock (_lock) { _pool[1].Add(buy.CardId!); _bought++; _roundBought++; }
+        Interlocked.Increment(ref _cardCount);
         Activity();
         _log($"[Xoay vòng/Mua] Mua thẻ +1 giá {cheapest.Price:N0} (id …{Tail(buy.CardId!)}); trong dây chuyền {Pipeline()}/{_cap} thẻ +1.");
         await Pacing.Wait(2.0, 4.5, pace, tok);
@@ -270,7 +285,7 @@ public sealed class CycleRunner
         lock (_lock)
         {
             _inFlight -= job.Eq;
-            if (merged) { _pool[job.Level].Add(job.Main); _merged++; _roundMerged++; }
+            if (merged) { _pool[job.Level].Add(job.Main); _merged++; _roundMerged++; Interlocked.Decrement(ref _cardCount); }
             else
             {
                 // the merge did not happen: both cards are still ours
@@ -317,6 +332,7 @@ public sealed class CycleRunner
             await Pacing.Wait(2.0, 4.5, pace, tok);
             if (!await _inner.EnhanceWithRecoveryAsync(main, mat, lvl, step, pace, tok)) { Stop($"Ép +{lvl} thất bại (xem nhật ký phía trên)."); return; }
             if (!_api.LastHadMoney) _api.Spend(pv.EnhancePay);
+            Interlocked.Add(ref _spent, pv.EnhancePay);
             job = job with { Main = main, Mat = mat };
             done = true;
             _step(step, StepState.Done);
@@ -345,6 +361,7 @@ public sealed class CycleRunner
         // the storage is the truth about card values
         var inv = await _api.GetInventoryAsync(tok);
         LearnTargetValue(inv, plan);
+        Volatile.Write(ref _cardCount, inv.Count);
         var held = inv.Where(c => c.Spid == plan.Spid && c.Grade == plan.Target && c.Group == GameApi.GroupNone).ToList();
         if (held.Any(c => c.Value <= 0)) { Stop("Không đọc được giá trị của thẻ trong kho, dừng để không tính sai."); return; }
         long heldValue = held.Sum(c => c.Value);
@@ -364,7 +381,14 @@ public sealed class CycleRunner
         try
         {
             // reserve: from now the buyer sees room for the next batch and keeps working while this trade goes through
-            lock (_lock) foreach (var c in batch) _pool[plan.Target].Remove(c.Id);
+            long batchCost;
+            lock (_lock)
+            {
+                foreach (var c in batch) _pool[plan.Target].Remove(c.Id);
+                long spentNow = Interlocked.Read(ref _spent);
+                batchCost = spentNow - _spentAtReserve;   // spent since the previous batch was taken out: this batch's buys and merges
+                _spentAtReserve = spentNow;
+            }
 
             _log($"[Xoay vòng/Giao dịch] Đổi {batch.Count} thẻ +{plan.Target}, tổng giá trị {sum:N0} EP" +
                  (batch.Count < held.Count ? $" (còn {held.Count - batch.Count} thẻ chờ lượt sau)" : "") + ". Đang hỏi phương án...");
@@ -388,20 +412,21 @@ public sealed class CycleRunner
             var res = await _api.TradeContractAsync(best.Index, 0, CancellationToken.None);
             if (!res.Ok) { _step(CycleRunner.TradeStep, StepState.Error); Stop("Giao dịch thất bại: " + GameApi.Trim(res.Raw)); return; }
             await _api.GetWalletAsync(CancellationToken.None);
+            Interlocked.Add(ref _cardCount, 1 - batch.Count);
 
             RoundStat st;
             lock (_lock)
             {
-                st = new RoundStat(_round1, _roundBought, _roundMerged, batch.Count, sum, _roundStartEp, Ep(), best.Price);
+                st = new RoundStat(_round1, _roundBought, _roundMerged, batch.Count, sum, batchCost, best.Ep, best.Price);
                 _totalNet += st.Net;
                 _lossStreak = st.Net < 0 ? _lossStreak + 1 : 0;
-                _tradesDone++; _round1++; _roundBought = _roundMerged = 0; _roundStartEp = Ep();
+                _tradesDone++; _round1++; _roundBought = _roundMerged = 0;
             }
             _step(CycleRunner.TradeStep, StepState.Done);
             Activity();
             _round?.Invoke(st);
-            _log($"[Xoay vòng] KẾT THÚC VÒNG {st.Round}: mua {st.Bought} thẻ +1, ép {st.Merged} lần, đổi {st.Cards} thẻ ({st.CardValue:N0}), EP {st.EpBefore:N0} → {st.EpAfter:N0}, " +
-                 $"cầu thủ nhận về giá {st.ReceivedPlayerPrice:N0}, " + (st.Net >= 0 ? "LÃI " : "LỖ ") + $"{Math.Abs(st.Net):N0} EP. Tổng cả phiên {Signed(_totalNet)} EP.");
+            _log($"[Xoay vòng] KẾT THÚC VÒNG {st.Round}: mua {st.Bought} thẻ +1, ép {st.Merged} lần, đổi {st.Cards} thẻ ({st.CardValue:N0}); chi phí mua+ép lô này {st.Cost:N0}, nhận {st.IncomeEp:N0} EP + " +
+                 $"cầu thủ giá {st.ReceivedPlayerPrice:N0}, " + (st.Net >= 0 ? "LÃI " : "LỖ ") + $"{Math.Abs(st.Net):N0} EP. Tổng cả phiên {Signed(_totalNet)} EP.");
             if (_lossStreak >= opt.MaxLossRounds) Stop($"Đã lỗ {_lossStreak} lần giao dịch liên tiếp, dừng theo cài đặt.");
         }
         finally { _trading = false; }
@@ -414,6 +439,8 @@ public sealed class CycleRunner
 
     // ================= supervisor =================
     private DateTime _lastWallet = DateTime.UtcNow, _lastSession = DateTime.UtcNow;
+
+    private bool busy0() => _trading || _merging;
 
     private async Task SuperviseOnce(UpgradePlan plan, CycleOptions opt, CancellationToken tok)
     {
@@ -428,7 +455,12 @@ public sealed class CycleRunner
         _progress(opt.TradeMin > 0 ? (int)Math.Min(100, est * 100 / opt.TradeMin) : 0, 100, text);
 
         var now = DateTime.UtcNow;
-        if ((now - _lastWallet).TotalSeconds >= 15) { _lastWallet = now; await _api.GetWalletAsync(tok); }
+        if ((now - _lastWallet).TotalSeconds >= 15)
+        {
+            _lastWallet = now;
+            await _api.GetWalletAsync(tok);   // also refreshes the card count
+            if (_api.LastCardCount is int n) Volatile.Write(ref _cardCount, n);
+        }
         if ((now - _lastSession).TotalSeconds >= 60)
         {
             _lastSession = now;
@@ -436,9 +468,23 @@ public sealed class CycleRunner
             if (!valid) { Stop($"Phiên đã hết hạn ({detail}). Hãy đăng nhập lại."); return; }
         }
 
+        // storage full and nothing left to merge or sell: no way to free a slot -> stop (a few seconds of grace for work in flight)
+        bool canSell = waiting * Math.Max(_targetValue, 1) >= opt.TradeMin;
+        if (_cardCount >= opt.StorageSlots && !busy0() && !CanMerge(plan) && !canSell)
+        {
+            _fullSince ??= now;
+            if ((now - _fullSince.Value).TotalSeconds >= 10)
+            {
+                string cards; lock (_lock) cards = string.Join(", ", Enumerable.Range(1, plan.Target).Where(l => _pool[l].Count > 0).Select(l => $"{_pool[l].Count}×+{l}"));
+                Stop($"Kho đã đầy ({_cardCount}/{opt.StorageSlots}) và không còn thẻ hợp lệ để ép hoặc đổi. Thẻ của cầu thủ này trong dây chuyền: {(cards.Length > 0 ? cards : "không")}. Hãy bán/xóa bớt cầu thủ trong kho rồi chạy lại.");
+                return;
+            }
+        }
+        else _fullSince = null;
+
         // nothing left that could make progress: no EP and nothing in flight / ready to sell, or no stock on the market for a long time
         double idle = (now - _lastActivity).TotalSeconds;
-        bool busy = _trading || _merging;
+        bool busy = busy0();
         if (_buyBlockedEp && !busy && idle > 20 && Pipeline() > 0 && waiting * Math.Max(_targetValue, 1) < opt.TradeMin)
         { Stop(_buyBlock + " Còn thẻ chưa đủ giá trị để đổi."); return; }
         if (_buyBlockedEp && !busy && idle > 20 && Pipeline() == 0) { Stop(_buyBlock); return; }

@@ -185,7 +185,16 @@ public sealed class GameApi
     {
         var text = await GetAsync("/coach/me", ct);
         ApplyMoney(text);
+        CountCards(text);
         return LastWallet;
+    }
+
+    /// <summary>Number of cards in the storage as of the last /coach/me read (the game's storage holds 200), null until read.</summary>
+    public int? LastCardCount { get; private set; }
+
+    private void CountCards(string text)
+    {
+        try { LastCardCount = JsonNode.Parse(text)?["team"]?["players"]?.AsArray().Count; } catch { }
     }
 
     public sealed record OwnedCard(string Id, long Spid, int Grade, bool InSquad, string Name = "", int Group = 2, long Value = 0);
@@ -233,6 +242,7 @@ public sealed class GameApi
     {
         var text = await GetAsync("/coach/me", ct);
         ApplyMoney(text);
+        CountCards(text);
         return ParseInventory(text);
     }
 
