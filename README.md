@@ -106,6 +106,8 @@ Lần đầu mở: bấm **Đăng nhập**, nhập tài khoản và mật khẩu
 
 ## 5. Các API game mà tool dùng
 
+> Định dạng yêu cầu/phản hồi chi tiết, luật ép thẻ, thuật toán và các lỗi đã gặp nằm trong [`docs/API.md`](docs/API.md).
+
 Gốc: `{gameBase}`, cookie phiên `connect.sid` và `fo3sid`.
 
 | API | Việc |
