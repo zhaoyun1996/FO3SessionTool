@@ -587,12 +587,12 @@ public sealed class MainForm : Form
         }
     }
 
-    private async void OnCycleRun(UpgradePlan plan)
+    private async void OnCycleRun(UpgradePlan plan, long tradeMin)
     {
         if (_api == null) { Warn("Hãy đăng nhập trước."); return; }
         if (_upCts != null) return;
 
-        var opt = new CycleOptions();
+        var opt = new CycleOptions(TradeMin: tradeMin);
         var nl = Environment.NewLine;
         var rules = string.Join(nl, Enumerable.Range(2, plan.Target - 1).Select(l => $"   +{l} = +{plan.Rules[l].A} và +{plan.Rules[l].B}"));
         var ask = MessageBox.Show(
