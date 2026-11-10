@@ -55,6 +55,8 @@ public sealed class CycleRunner
     private bool _buyBlockedEp;
     private volatile bool _trading, _merging;
     private string? _reason;
+    /// <summary>Seconds without any buy / merge / trade before the run gives up (watchdog against silent loops).</summary>
+    internal int StallSeconds = 300;
     private CancellationTokenSource _stop = new();
 
     private long Ep() => _api.LastWallet?.Ep ?? 0;
@@ -161,6 +163,7 @@ public sealed class CycleRunner
 
     // ================= buyer =================
     private int _buyFailures;
+    private DateTime? _waitFreeSince;
 
     private async Task BuyOnce(UpgradePlan plan, double pace, CancellationToken tok)
     {
@@ -171,6 +174,13 @@ public sealed class CycleRunner
             await Pacing.Wait(1.5, 3, pace, tok);
             return;
         }
+        if (_waitFreeSince != null && _lastActivity <= _waitFreeSince)
+        {
+            // storage looked full: do not hammer the server until a merge or trade has freed something
+            await Pacing.Wait(3, 6, pace, tok);
+            return;
+        }
+        _waitFreeSince = null;
         var cheapest = (await _api.SearchAsync(plan.Spid, tok)).Where(l => l.Grade == 1).OrderBy(l => l.Price).FirstOrDefault();
         if (cheapest == null || (plan.MaxPrice > 0 && cheapest.Price > plan.MaxPrice))
         {
@@ -194,11 +204,26 @@ public sealed class CycleRunner
         if (!buy.Ok)
         {
             _log($"[Xoay vòng/Mua] Mua thất bại ({GameApi.Trim(buy.Raw)}), thử lại...");
-            if (++_buyFailures >= 5) { _step(0, StepState.Error); Stop("Mua thất bại 5 lần liên tiếp."); return; }
+            if (++_buyFailures >= 5)
+            {
+                // Often a full storage. If merging or trading is still going on it will free slots (2 cards -> 1, N cards -> 1), so wait for it;
+                // if nothing can free a slot, stop instead of looping for ever.
+                if (_trading || _merging || CanMerge(plan))
+                {
+                    _buyBlock = "Mua thất bại nhiều lần (có thể kho đã đầy chỗ), đang chờ ép/giao dịch giải phóng chỗ.";
+                    _buyFailures = 4;   // one more failure after the next progress sends it back to waiting
+                    _waitFreeSince = DateTime.UtcNow;
+                    await Pacing.Wait(10, 20, pace, tok);
+                    return;
+                }
+                _step(0, StepState.Error);
+                Stop("Mua thất bại 5 lần liên tiếp và không còn gì để ép/đổi. Có thể kho cầu thủ đã đầy chỗ (hãy bán/xóa bớt cầu thủ không cần) hoặc server từ chối. Phản hồi cuối: " + GameApi.Trim(buy.Raw));
+                return;
+            }
             await Pacing.Wait(3, 6, pace, tok);
             return;
         }
-        _buyFailures = 0;
+        _buyFailures = 0; _waitFreeSince = null;
         if (!_api.LastHadMoney) _api.Spend(cheapest.Price);
         lock (_lock) { _pool[1].Add(buy.CardId!); _bought++; _roundBought++; }
         Activity();
@@ -254,6 +279,17 @@ public sealed class CycleRunner
                 _pool[a == b ? a : Math.Min(a, b)].Add(job.Mat);
             }
         }
+    }
+
+    private bool CanMerge(UpgradePlan plan)
+    {
+        lock (_lock)
+            for (int lvl = plan.Target; lvl >= 2; lvl--)
+            {
+                var (a, b) = plan.Rules[lvl];
+                if (a == b ? _pool[a].Count >= 2 : _pool[a].Count >= 1 && _pool[b].Count >= 1) return true;
+            }
+        return false;
     }
 
     private async Task MergeOnce(UpgradePlan plan, double pace, CancellationToken tok)
@@ -406,6 +442,14 @@ public sealed class CycleRunner
         if (_buyBlockedEp && !busy && idle > 20 && Pipeline() > 0 && waiting * Math.Max(_targetValue, 1) < opt.TradeMin)
         { Stop(_buyBlock + " Còn thẻ chưa đủ giá trị để đổi."); return; }
         if (_buyBlockedEp && !busy && idle > 20 && Pipeline() == 0) { Stop(_buyBlock); return; }
-        if (_buyBlock.Length > 0 && !_buyBlockedEp && !busy && idle > 180) Stop(_buyBlock + " Đã chờ quá lâu.");
+        if (_buyBlock.Length > 0 && !_buyBlockedEp && !busy && idle > 180) { Stop(_buyBlock + " Đã chờ quá lâu."); return; }
+
+        // watchdog: nothing bought, merged or traded for a long time and nothing is running -> something is stuck, never loop silently
+        if (!busy && idle > StallSeconds)
+        {
+            string cards; lock (_lock) cards = string.Join(", ", Enumerable.Range(1, plan.Target).Where(l => _pool[l].Count > 0).Select(l => $"{_pool[l].Count}×+{l}"));
+            Stop($"Không có tiến triển trong {StallSeconds / 60.0:0.#} phút (không mua, ép hay đổi được). Thẻ trong dây chuyền: {(cards.Length > 0 ? cards : "không")}; " +
+                 $"sức chứa {_cap} thẻ +1. " + (_buyBlock.Length > 0 ? _buyBlock : "Có thể kho đã đầy chỗ hoặc các thẻ còn lại không ghép được theo rule."));
+        }
     }
 }
