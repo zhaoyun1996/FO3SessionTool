@@ -1,0 +1,13 @@
+{
+  "launcherBase": "https://3sea.online",
+  "gameBase": "http://216.236.2.193:18090/lang-vi",
+  "launcherUserAgent": "3seaLauncher/1.0.5",
+  "queuePollSeconds": 5,
+  "hwid": {
+    "board": "<32-hex-from-your-launcher>",
+    "cpu": "<32-hex-from-your-launcher>",
+    "disk": "<32-hex-from-your-launcher>",
+    "id": "<32-hex-from-your-launcher>",
+    "machine": "<32-hex-from-your-launcher>"
+  }
+}

@@ -1,0 +1,10 @@
+bin/
+obj/
+.vs/
+dist/
+dist_new/
+*.user
+config.json
+capture/game_capture_redacted.txt
+capture/*.flow
+capture/__pycache__/
