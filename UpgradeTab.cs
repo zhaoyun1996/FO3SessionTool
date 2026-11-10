@@ -37,6 +37,8 @@ public sealed class UpgradeTab : UserControl
     private readonly DarkRadio[] _tgt = new DarkRadio[MaxLevel + 1];   // target level radios, +5 .. +10
     private readonly DarkRadio _modeBuy = new() { Text = "Mua mới", Checked = true, Margin = new Padding(3, 5, 14, 5) };
     private readonly DarkRadio _modeStock = new() { Text = "Thẻ trong kho", Margin = new Padding(3, 5, 3, 5) };
+    private readonly DarkRadio _runOnce = new() { Text = "Một lần", Checked = true, Margin = new Padding(3, 5, 14, 5) };
+    private readonly DarkRadio _runLoop = new() { Text = "Xoay vòng", Margin = new Padding(3, 5, 3, 5) };
     private readonly DarkCombo _pace = new() { DropDownStyle = ComboBoxStyle.DropDownList, Anchor = AnchorStyles.Left | AnchorStyles.Right };
     private static readonly double[] PaceFactor = { 1.8, 1.0, 0.5 };
 
@@ -57,7 +59,7 @@ public sealed class UpgradeTab : UserControl
     private readonly DarkCombo[] _ruleB = new DarkCombo[MaxLevel + 1];
 
     // preview + run
-    private readonly Label[] _steps = new Label[MaxLevel];
+    private readonly Label[] _steps = new Label[MaxLevel + 1];   // Mua, Ép +2..+N, and (loop mode) Giao dịch last
     private readonly DarkProgress _bar = new() { Dock = DockStyle.Fill, Margin = new Padding(0) };
     private readonly Label _status = new() { Text = "Sẵn sàng.", AutoSize = true, ForeColor = Theme.Dim, Anchor = AnchorStyles.Left };
     private readonly DarkButton _btnRun = new() { Text = "▶  Thực hiện", Width = 140, Tag = "primary" };
@@ -65,6 +67,7 @@ public sealed class UpgradeTab : UserControl
     private readonly ToolTip _tip = new();
 
     public event Action<UpgradePlan>? RunRequested;
+    public event Action<UpgradePlan>? CycleRequested;   // loop mode: buy -> merge -> trade until stopped
     public event Action? StopRequested;
 
     public UpgradeTab(PlayerSearch players, Action<string> log)
@@ -105,6 +108,7 @@ public sealed class UpgradeTab : UserControl
         _results.SelectedIndexChanged += (_, _) => OnPlayerPicked();
         _results.DrawItem += DrawResultItem;
         _modeStock.CheckedChanged += (_, _) => OnModeChanged();
+        _runLoop.CheckedChanged += (_, _) => UpdateStepVisibility();
         _byPlayers.CheckedChanged += (_, _) => OnBuyByChanged();
         _cnt.ValueChanged += (_, _) => UpdateQtyNote();
         for (int l = 5; l <= MaxLevel; l++) if (l >= 0) { int lv = l; _tgt[lv].CheckedChanged += (_, _) => { if (!_tgt[lv].Checked) return; if (!StockMode) SyncQty(); UpdateStepVisibility(); }; }
@@ -151,10 +155,10 @@ public sealed class UpgradeTab : UserControl
     private Control BuildBuyBox()
     {
         var box = new DarkGroup { Text = "2. Nguồn thẻ", Dock = DockStyle.Fill };
-        var t = Grid(2, 6);
+        var t = Grid(2, 7);
         t.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120));
         t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        for (int i = 0; i < 5; i++) t.RowStyles.Add(new RowStyle(SizeType.Absolute, Theme.RowH));
+        for (int i = 0; i < 6; i++) t.RowStyles.Add(new RowStyle(SizeType.Absolute, Theme.RowH));
         t.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
         t.Controls.Add(Lbl("Nguồn thẻ"), 0, 0);
@@ -181,6 +185,12 @@ public sealed class UpgradeTab : UserControl
         t.Controls.Add(Lbl("Tốc độ"), 0, 4);
         _pace.Anchor = AnchorStyles.Left; _pace.Width = 190;
         t.Controls.Add(_pace, 1, 4);
+        t.Controls.Add(Lbl("Cách chạy"), 0, 5);
+        var how = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = Padding.Empty, Anchor = AnchorStyles.Left };
+        how.Controls.Add(_runOnce);
+        how.Controls.Add(_runLoop);
+        t.Controls.Add(how, 1, 5);
+        _tip.SetToolTip(_runLoop, "Xoay vòng: mua → ép → giao dịch. Mua và ép liên tục; khi tổng giá trị thẻ đích đạt 900 triệu - 1 tỷ EP thì đổi hết (chọn phương án lớn nhất). Lặp đến khi hết EP, lỗ 2 vòng liên tiếp hoặc bấm Dừng.");
         _tip.SetToolTip(_maxPrice, "EP; 0 = không giới hạn giá");
         box.Controls.Add(t);
         return box;
@@ -247,9 +257,10 @@ public sealed class UpgradeTab : UserControl
         var steps = new FlowLayoutPanel { Anchor = AnchorStyles.Left, AutoSize = true, WrapContents = false, Margin = new Padding(0) };
         var names = new List<string> { "Mua" };
         for (int l = 2; l <= MaxLevel; l++) names.Add($"Ép +{l}");
+        names.Add("Giao dịch");
         for (int i = 0; i < _steps.Length; i++)
         {
-            _steps[i] = new Label { Text = names[i], AutoSize = false, Width = 70, Height = Theme.ButtonH, TextAlign = ContentAlignment.MiddleCenter, Margin = new Padding(0, 0, 6, 0), Font = Theme.Bold };
+            _steps[i] = new Label { Text = names[i], AutoSize = false, Width = i == MaxLevel ? 80 : 56, Height = Theme.ButtonH, TextAlign = ContentAlignment.MiddleCenter, Margin = new Padding(0, 0, 3, 0), Font = Theme.Bold };
             steps.Controls.Add(_steps[i]);
             SetStepState(i, StepState.Pending);
         }
@@ -352,6 +363,9 @@ public sealed class UpgradeTab : UserControl
         _maxPrice.Enabled = !stock && !_running;
         _byCards.Enabled = _byPlayers.Enabled = !stock && !_running;
         _steps[0].Text = stock ? "Kho" : "Mua";
+        _runLoop.Enabled = _runOnce.Enabled = !stock && !_running;
+        if (stock) _runOnce.Checked = true;
+        UpdateStepVisibility();
     }
 
     // ---- player search --------------------------------------------------
@@ -509,6 +523,7 @@ public sealed class UpgradeTab : UserControl
         _btnStop.Enabled = _running;
         _tip.SetToolTip(_btnRun, _loggedIn ? "Lấy đủ thẻ (mua hoặc từ kho) rồi ép theo rule" : "Hãy đăng nhập trước");
         foreach (Control c in new Control[] { _name, _btnFind, _results, _modeBuy, _modeStock, _pace }) c.Enabled = !_running;
+        _runOnce.Enabled = _runLoop.Enabled = !_running && !StockMode;
         foreach (var r in _tgt) if (r != null) r.Enabled = !_running;
         _qty.Enabled = _cnt.Enabled = !_running && !StockMode;
         _byCards.Enabled = _byPlayers.Enabled = !_running && !StockMode;
@@ -518,7 +533,8 @@ public sealed class UpgradeTab : UserControl
 
     private void UpdateStepVisibility()
     {
-        for (int i = 1; i < _steps.Length; i++) _steps[i].Visible = i + 1 <= TargetLevel;
+        for (int i = 1; i < MaxLevel; i++) _steps[i].Visible = i + 1 <= TargetLevel;
+        _steps[MaxLevel].Visible = _runLoop.Checked && !StockMode;
     }
 
     /// <summary>step 0 = buying, step k (1..4) = merging to +(k+1).</summary>
@@ -552,6 +568,7 @@ public sealed class UpgradeTab : UserControl
         double pace = PaceFactor[_pace.SelectedIndex < 0 ? 1 : _pace.SelectedIndex];
         var plan = new UpgradePlan(spid, name, StockMode ? 0 : BuyQty, StockMode ? 0 : (long)_maxPrice.Value,
             TargetLevel, Rules, StockMode, pace);
-        RunRequested?.Invoke(plan);
+        if (_runLoop.Checked && !StockMode) CycleRequested?.Invoke(plan);
+        else RunRequested?.Invoke(plan);
     }
 }

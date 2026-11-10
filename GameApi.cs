@@ -170,7 +170,11 @@ public sealed class GameApi
     {
         try
         {
-            var m = JsonNode.Parse(text)?["money"];
+            var root = JsonNode.Parse(text);
+            var m = root?["money"];
+            if (m?["ep"] == null)   // purchase / enhance / trade answers carry the fresh /coach/me in resources[]
+                foreach (var r in root?["resources"]?.AsArray() ?? new JsonArray())
+                    if (r?["uri"]?.GetValue<string>() == "/coach/me" && r["body"]?["money"]?["ep"] != null) { m = r["body"]!["money"]; break; }
             if (m?["ep"] == null) return null;
             return new Wallet(m["ep"]!.GetValue<long>(), m["es"]?.GetValue<long>() ?? 0);
         }

@@ -91,6 +91,7 @@ public sealed class MainForm : Form
         _upgrade.InventoryProvider = () => _api == null ? Task.FromResult(new List<GameApi.OwnedCard>()) : _api.GetInventoryAsync();
         _upgrade.MarketProvider = spid => _api == null ? Task.FromResult(new List<Listing>()) : _api.SearchAsync(spid);
         _upgrade.RunRequested += OnUpgradeRun;
+        _upgrade.CycleRequested += OnCycleRun;
         _upgrade.StopRequested += () => { _upCts?.Cancel(); Log("[Ép thẻ] Đang dừng..."); };
         _tabUpgrade = new TabPage("Ép thẻ tự động") { Padding = new Padding(0, Theme.Gap, 0, 0) };
         _tabUpgrade.Controls.Add(_upgrade);
@@ -583,6 +584,48 @@ public sealed class MainForm : Form
             _upCts = null;
             _upgrade.SetRunning(false);
             if (_api != null) _ = RefreshWalletAsync(_api);   // exact balance after the run
+        }
+    }
+
+    private async void OnCycleRun(UpgradePlan plan)
+    {
+        if (_api == null) { Warn("Hãy đăng nhập trước."); return; }
+        if (_upCts != null) return;
+
+        var opt = new CycleOptions();
+        var nl = Environment.NewLine;
+        var rules = string.Join(nl, Enumerable.Range(2, plan.Target - 1).Select(l => $"   +{l} = +{plan.Rules[l].A} và +{plan.Rules[l].B}"));
+        var ask = MessageBox.Show(
+            $"XOAY VÒNG TỰ ĐỘNG cho {plan.Name} (SPID {plan.Spid}):" + nl + nl +
+            $"1) Mua {plan.Quantity} thẻ +1 (giá tối đa/thẻ: {(plan.MaxPrice > 0 ? plan.MaxPrice.ToString("N0") + " EP" : "không giới hạn")})." + nl +
+            $"2) Gom thẻ hợp lệ trong kho rồi ép đến +{plan.Target}." + nl +
+            $"3) Lặp lại 1-2 cho đến khi tổng giá trị thẻ +{plan.Target} đạt {opt.TradeMin:N0} - {opt.TradeMax:N0} EP, rồi ĐỔI HẾT (chọn phương án lớn nhất), không giữ lại thẻ nào." + nl +
+            "   Gồm cả thẻ +" + plan.Target + " của cầu thủ này đang có sẵn trong kho (ngoài đội hình)." + nl + nl +
+            $"Rule:{nl}{rules}{nl}{nl}" +
+            $"Dừng khi: hết EP, lỗ {opt.MaxLossRounds} vòng liên tiếp, phiên hết hạn, có lỗi, hoặc bạn bấm Dừng." + nl +
+            "Mỗi giao dịch KHÔNG hoàn tác và sẽ không hỏi lại. Thao tác này tiêu tốn EP thật." + nl + nl + "Bắt đầu?",
+            "Xác nhận xoay vòng tự động", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
+        if (ask != DialogResult.Yes) return;
+
+        _upCts = new CancellationTokenSource();
+        _upgrade.ResetSteps();
+        _upgrade.SetRunning(true);
+        Log($"[Xoay vòng] Bắt đầu: {plan.Name} (SPID {plan.Spid}) ×{plan.Quantity} thẻ +1 mỗi lượt, ép đến +{plan.Target}, đổi khi đạt {opt.TradeMin:N0}-{opt.TradeMax:N0} EP.");
+        try
+        {
+            var runner = new CycleRunner(_api, Log, _upgrade.SetStepState, _upgrade.SetProgress, _upgrade.ResetSteps);
+            var reason = await runner.RunAsync(plan, opt, _upCts.Token);
+            Log("[Xoay vòng] DỪNG: " + reason);
+            _upgrade.SetProgress(0, 1, "Đã dừng: " + reason);
+        }
+        catch (OperationCanceledException) { Log("[Xoay vòng] Đã dừng theo yêu cầu."); _upgrade.SetProgress(0, 1, "Đã dừng."); }
+        catch (Exception ex) { Log("[Xoay vòng] LỖI: " + ex.Message); _upgrade.SetProgress(0, 1, "Lỗi: " + ex.Message); }
+        finally
+        {
+            _upCts?.Dispose();
+            _upCts = null;
+            _upgrade.SetRunning(false);
+            if (_api != null) _ = RefreshWalletAsync(_api);
         }
     }
 

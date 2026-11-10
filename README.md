@@ -4,7 +4,9 @@ Công cụ WinForms (.NET 10, chỉ chạy trên Windows) cho server game riêng
 
 - Đăng nhập giống launcher (hàng chờ → token → phiên game), lưu phiên mã hóa bằng DPAPI.
 - **Ép thẻ tự động**: mua thẻ +1 hoặc dùng thẻ trong kho, ép theo rule đến +10.
-- **Kho cầu thủ**: danh sách cầu thủ chưa đăng ký, tên đầy đủ, chọn thẻ để giao dịch.
+- **Xoay vòng (mua → ép → giao dịch):** ở ô "Cách chạy" chọn *Xoay vòng*. Tool mua và ép liên tục; khi tổng giá trị thẻ đích (+5…+10, chưa đăng ký) của cầu thủ đạt 900 triệu đến 1 tỷ EP thì đổi hết, chọn phương án có tổng lớn nhất, không giữ lại thẻ nào. Lặp lại đến khi: hết EP, lỗ 2 vòng liên tiếp (vòng = từ lần giao dịch trước đến lần giao dịch này; lãi/lỗ tính theo EP, cộng giá cầu thủ nhận về), phiên hết hạn, có lỗi, hoặc bạn bấm Dừng. Chỉ có một hộp xác nhận ở đầu; mỗi giao dịch sau đó không hỏi lại và không hoàn tác. Giao dịch đang chốt thì không bị ngắt giữa chừng khi bấm Dừng. Mã nguồn: `CycleRunner.cs`.
+
+**Kho cầu thủ**: danh sách cầu thủ chưa đăng ký, tên đầy đủ, chọn thẻ để giao dịch.
 - **Giao dịch**: đổi thẻ lấy cầu thủ + EP tiền tươi (tự chọn hoặc tự động chọn phương án lớn nhất).
 - **Tìm kiếm cầu thủ** (dữ liệu từ fifaaddict).
 - Lấy phiên từ game đang chạy và giữ phiên bằng ping định kỳ.
