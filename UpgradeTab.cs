@@ -29,7 +29,7 @@ public sealed class UpgradeTab : UserControl
     // purchase
     private readonly DarkNumber _qty = new() { Minimum = 1, Maximum = 9999, Value = 16, Anchor = AnchorStyles.Left | AnchorStyles.Right };
     private readonly DarkRadio _byCards = new() { Text = "Số thẻ +1", Checked = true, Margin = new Padding(3, 5, 14, 5) };
-    private readonly DarkRadio _byPlayers = new() { Text = "Số cầu thủ muốn ép", Margin = new Padding(3, 5, 3, 5) };
+    private readonly DarkRadio _byPlayers = new() { Text = "Số cầu thủ", Margin = new Padding(3, 5, 3, 5) };
     private readonly DarkNumber _cnt = new() { Minimum = 1, Maximum = 999, Value = 1, Anchor = AnchorStyles.Left, Width = 130, Visible = false };
     private readonly Label _qtyLabel = new() { Text = "Số thẻ +1 mua", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(3, 0, 3, 0) };
     private readonly Label _qtyNote = new() { AutoSize = true, ForeColor = Theme.Dim, Anchor = AnchorStyles.Left, Margin = new Padding(8, 0, 0, 0) };
@@ -167,6 +167,8 @@ public sealed class UpgradeTab : UserControl
         for (int i = 0; i < 8; i++) t.RowStyles.Add(new RowStyle(SizeType.Absolute, Theme.RowH));
         t.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
+        // first radio of each pair gets the same width so the second column lines up across the rows
+        foreach (var r in new[] { _modeBuy, _byCards, _runOnce }) { r.AutoSize = false; r.Width = 92; r.Margin = new Padding(3, 5, 0, 5); }
         t.Controls.Add(Lbl("Nguồn thẻ"), 0, 0);
         var modes = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = Padding.Empty, Anchor = AnchorStyles.Left };
         modes.Controls.Add(_modeBuy);
