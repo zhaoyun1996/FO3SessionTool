@@ -172,30 +172,30 @@ public sealed class UpgradeTab : UserControl
         modes.Controls.Add(_modeBuy);
         modes.Controls.Add(_modeStock);
         t.Controls.Add(modes, 1, 0);
-        t.Controls.Add(Lbl("Mua theo"), 0, 1);
+        t.Controls.Add(Lbl("Mua theo"), 0, 2);
         var by = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = Padding.Empty, Anchor = AnchorStyles.Left };
         by.Controls.Add(_byCards);
         by.Controls.Add(_byPlayers);
-        t.Controls.Add(by, 1, 1);
-        t.Controls.Add(_qtyLabel, 0, 2);
+        t.Controls.Add(by, 1, 2);
+        t.Controls.Add(_qtyLabel, 0, 3);
         _qty.Anchor = AnchorStyles.Left; _qty.Width = 130;
         var qtyRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(3, 0, 3, 0), Padding = Padding.Empty, Anchor = AnchorStyles.Left };
         _qty.Margin = Padding.Empty; _cnt.Margin = Padding.Empty;
         qtyRow.Controls.Add(_qty);
         qtyRow.Controls.Add(_cnt);
         qtyRow.Controls.Add(_qtyNote);
-        t.Controls.Add(qtyRow, 1, 2);
-        t.Controls.Add(Lbl("Giá tối đa/thẻ"), 0, 3);
+        t.Controls.Add(qtyRow, 1, 3);
+        t.Controls.Add(Lbl("Giá tối đa/thẻ"), 0, 4);
         _maxPrice.Anchor = AnchorStyles.Left; _maxPrice.Width = 130;
-        t.Controls.Add(_maxPrice, 1, 3);
-        t.Controls.Add(Lbl("Tốc độ"), 0, 4);
+        t.Controls.Add(_maxPrice, 1, 4);
+        t.Controls.Add(Lbl("Tốc độ"), 0, 5);
         _pace.Anchor = AnchorStyles.Left; _pace.Width = 190;
-        t.Controls.Add(_pace, 1, 4);
-        t.Controls.Add(Lbl("Cách chạy"), 0, 5);
+        t.Controls.Add(_pace, 1, 5);
+        t.Controls.Add(Lbl("Cách chạy"), 0, 1);
         var how = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = Padding.Empty, Anchor = AnchorStyles.Left };
         how.Controls.Add(_runOnce);
         how.Controls.Add(_runLoop);
-        t.Controls.Add(how, 1, 5);
+        t.Controls.Add(how, 1, 1);
         t.Controls.Add(_tradeMinLabel, 0, 6);
         _tradeMin.Margin = new Padding(3, 0, 3, 0);
         t.Controls.Add(_tradeMin, 1, 6);
@@ -556,8 +556,8 @@ public sealed class UpgradeTab : UserControl
             _buyGrid.RowStyles[row] = new RowStyle(SizeType.Absolute, visible ? Theme.RowH : 0);
             foreach (Control c in _buyGrid.Controls) if (_buyGrid.GetRow(c) == row) c.Visible = visible;
         }
-        Row(1, !loop);
-        Row(2, !loop);
+        Row(2, !loop);   // "Mua theo"
+        Row(3, !loop);   // quantity
         Row(6, loop);
         Row(7, loop);
     }
