@@ -587,22 +587,21 @@ public sealed class MainForm : Form
         }
     }
 
-    private async void OnCycleRun(UpgradePlan plan, long tradeMin)
+    private async void OnCycleRun(UpgradePlan plan, CycleOptions opt)
     {
         if (_api == null) { Warn("Hãy đăng nhập trước."); return; }
         if (_upCts != null) return;
 
-        var opt = new CycleOptions(TradeMin: tradeMin);
         var nl = Environment.NewLine;
         var rules = string.Join(nl, Enumerable.Range(2, plan.Target - 1).Select(l => $"   +{l} = +{plan.Rules[l].A} và +{plan.Rules[l].B}"));
         var ask = MessageBox.Show(
             $"XOAY VÒNG TỰ ĐỘNG cho {plan.Name} (SPID {plan.Spid}), ba việc chạy SONG SONG:" + nl + nl +
-            $"• MUA thẻ +1 liên tục (giá tối đa/thẻ: {(plan.MaxPrice > 0 ? plan.MaxPrice.ToString("N0") + " EP" : "không giới hạn")}), chỉ mua khi dây chuyền còn chỗ." + nl +
+            $"• MUA thẻ +1 liên tục, từng thẻ một (giá tối đa/thẻ: {(plan.MaxPrice > 0 ? plan.MaxPrice.ToString("N0") + " EP" : "không giới hạn")}), chỉ mua khi dây chuyền còn chỗ." + nl +
             $"• ÉP ngay khi có đủ cặp thẻ theo rule, đến +{plan.Target}." + nl +
             $"• GIAO DỊCH khi tổng giá trị thẻ +{plan.Target} đạt {opt.TradeMin:N0} - {opt.TradeMax:N0} EP: đổi hết (chọn phương án lớn nhất), không giữ lại thẻ nào." + nl +
             "   Gồm cả thẻ +" + plan.Target + " của cầu thủ này đang có sẵn trong kho (ngoài đội hình); các thẻ thấp hơn có sẵn cũng được dùng để ép." + nl + nl +
             $"Rule:{nl}{rules}{nl}{nl}" +
-            $"Dừng khi: hết EP, lỗ {opt.MaxLossRounds} lần giao dịch liên tiếp, phiên hết hạn, có lỗi, hoặc bạn bấm Dừng." + nl +
+            $"Dừng khi: hết EP{(opt.StopBelowEp > 0 ? $" (không mua nếu EP còn lại sau khi mua dưới {opt.StopBelowEp:N0})" : "")}, lỗ {opt.MaxLossRounds} lần giao dịch liên tiếp, phiên hết hạn, có lỗi, hoặc bạn bấm Dừng." + nl +
             "Mỗi giao dịch KHÔNG hoàn tác và sẽ không hỏi lại. Thao tác này tiêu tốn EP thật." + nl + nl + "Bắt đầu?",
             "Xác nhận xoay vòng tự động", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
         if (ask != DialogResult.Yes) return;

@@ -40,6 +40,9 @@ public sealed class UpgradeTab : UserControl
     private readonly DarkRadio _runOnce = new() { Text = "Một lần", Checked = true, Margin = new Padding(3, 5, 14, 5) };
     private readonly DarkRadio _runLoop = new() { Text = "Xoay vòng", Margin = new Padding(3, 5, 3, 5) };
     private readonly DarkNumber _tradeMin = new() { Minimum = 1, Maximum = 1_000_000_000, Value = 900_000_000, ThousandsSeparator = true, Increment = 10_000_000, Anchor = AnchorStyles.Left, Width = 160 };
+    private readonly DarkNumber _stopBelow = new() { Minimum = 0, Maximum = 1_000_000_000_000M, Value = 0, ThousandsSeparator = true, Increment = 100_000_000, Anchor = AnchorStyles.Left, Width = 160 };
+    private readonly Label _stopBelowLabel = new() { Text = "Dừng khi EP dưới", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(3, 0, 8, 0), Visible = false };
+    private TableLayoutPanel _buyGrid = null!;
     private readonly Label _tradeMinLabel = new() { Text = "Đổi khi từ (EP)", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(3, 0, 8, 0), Visible = false };
     private readonly DarkCombo _pace = new() { DropDownStyle = ComboBoxStyle.DropDownList, Anchor = AnchorStyles.Left | AnchorStyles.Right };
     private static readonly double[] PaceFactor = { 1.8, 1.0, 0.5 };
@@ -69,7 +72,7 @@ public sealed class UpgradeTab : UserControl
     private readonly ToolTip _tip = new();
 
     public event Action<UpgradePlan>? RunRequested;
-    public event Action<UpgradePlan, long>? CycleRequested;   // (plan, EP value of the target cards from which they are traded)   // loop mode: buy -> merge -> trade until stopped
+    public event Action<UpgradePlan, CycleOptions>? CycleRequested;   // loop mode: buy +1 cards non-stop, merge, trade   // loop mode: buy -> merge -> trade until stopped
     public event Action? StopRequested;
 
     public UpgradeTab(PlayerSearch players, Action<string> log)
@@ -157,10 +160,11 @@ public sealed class UpgradeTab : UserControl
     private Control BuildBuyBox()
     {
         var box = new DarkGroup { Text = "2. Nguồn thẻ", Dock = DockStyle.Fill };
-        var t = Grid(2, 8);
+        var t = Grid(2, 9);
+        _buyGrid = t;
         t.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120));
         t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        for (int i = 0; i < 7; i++) t.RowStyles.Add(new RowStyle(SizeType.Absolute, Theme.RowH));
+        for (int i = 0; i < 8; i++) t.RowStyles.Add(new RowStyle(SizeType.Absolute, Theme.RowH));
         t.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
         t.Controls.Add(Lbl("Nguồn thẻ"), 0, 0);
@@ -195,6 +199,10 @@ public sealed class UpgradeTab : UserControl
         t.Controls.Add(_tradeMinLabel, 0, 6);
         _tradeMin.Margin = new Padding(3, 0, 3, 0);
         t.Controls.Add(_tradeMin, 1, 6);
+        t.Controls.Add(_stopBelowLabel, 0, 7);
+        _stopBelow.Margin = new Padding(3, 0, 3, 0);
+        t.Controls.Add(_stopBelow, 1, 7);
+        _tip.SetToolTip(_stopBelow, "Không mua thêm nếu số EP còn lại sau khi mua sẽ dưới mức này; khi không còn gì ép/đổi được thì dừng. 0 = không đặt mức.");
         _tip.SetToolTip(_tradeMin, "Khi tổng giá trị các thẻ đích chưa đăng ký đạt mức này thì đổi hết (tối đa 1 tỷ EP mỗi lần giao dịch).");
         _tip.SetToolTip(_runLoop, "Xoay vòng: mua → ép → giao dịch. Mua và ép liên tục; khi tổng giá trị thẻ đích đạt 900 triệu - 1 tỷ EP thì đổi hết (chọn phương án lớn nhất). Lặp đến khi hết EP, lỗ 2 vòng liên tiếp hoặc bấm Dừng.");
         _tip.SetToolTip(_maxPrice, "EP; 0 = không giới hạn giá");
@@ -530,7 +538,7 @@ public sealed class UpgradeTab : UserControl
         _tip.SetToolTip(_btnRun, _loggedIn ? "Lấy đủ thẻ (mua hoặc từ kho) rồi ép theo rule" : "Hãy đăng nhập trước");
         foreach (Control c in new Control[] { _name, _btnFind, _results, _modeBuy, _modeStock, _pace }) c.Enabled = !_running;
         _runOnce.Enabled = _runLoop.Enabled = !_running && !StockMode;
-        _tradeMin.Enabled = !_running;
+        _tradeMin.Enabled = _stopBelow.Enabled = !_running;
         foreach (var r in _tgt) if (r != null) r.Enabled = !_running;
         _qty.Enabled = _cnt.Enabled = !_running && !StockMode;
         _byCards.Enabled = _byPlayers.Enabled = !_running && !StockMode;
@@ -538,11 +546,27 @@ public sealed class UpgradeTab : UserControl
         foreach (var c in _ruleA.Concat(_ruleB)) if (c != null) c.Enabled = !_running;
     }
 
+    /// <summary>Loop mode buys +1 cards non-stop, so the quantity rows go away; the trade threshold and the EP floor appear.</summary>
+    private void ApplyLoopLayout()
+    {
+        if (_buyGrid == null) return;
+        bool loop = _runLoop.Checked && !StockMode;
+        void Row(int row, bool visible)
+        {
+            _buyGrid.RowStyles[row] = new RowStyle(SizeType.Absolute, visible ? Theme.RowH : 0);
+            foreach (Control c in _buyGrid.Controls) if (_buyGrid.GetRow(c) == row) c.Visible = visible;
+        }
+        Row(1, !loop);
+        Row(2, !loop);
+        Row(6, loop);
+        Row(7, loop);
+    }
+
     private void UpdateStepVisibility()
     {
         for (int i = 1; i < MaxLevel; i++) _steps[i].Visible = i + 1 <= TargetLevel;
         _steps[MaxLevel].Visible = _runLoop.Checked && !StockMode;
-        _tradeMin.Visible = _tradeMinLabel.Visible = _runLoop.Checked && !StockMode;
+        ApplyLoopLayout();
     }
 
     /// <summary>step 0 = buying, step k (1..4) = merging to +(k+1).</summary>
@@ -574,9 +598,10 @@ public sealed class UpgradeTab : UserControl
         if (!long.TryParse(_spid.Text.Trim(), out var spid)) { SetStatus("Hãy chọn cầu thủ trước.", Theme.Danger); return; }
         var name = _results.SelectedItem is Item it && it.P.Spid == spid ? it.P.Name : $"SPID {spid}";
         double pace = PaceFactor[_pace.SelectedIndex < 0 ? 1 : _pace.SelectedIndex];
-        var plan = new UpgradePlan(spid, name, StockMode ? 0 : BuyQty, StockMode ? 0 : (long)_maxPrice.Value,
+        bool loopMode = _runLoop.Checked && !StockMode;
+        var plan = new UpgradePlan(spid, name, StockMode || loopMode ? 0 : BuyQty, StockMode ? 0 : (long)_maxPrice.Value,
             TargetLevel, Rules, StockMode, pace);
-        if (_runLoop.Checked && !StockMode) CycleRequested?.Invoke(plan, (long)_tradeMin.Value);
+        if (_runLoop.Checked && !StockMode) CycleRequested?.Invoke(plan, new CycleOptions(TradeMin: (long)_tradeMin.Value, StopBelowEp: (long)_stopBelow.Value));
         else RunRequested?.Invoke(plan);
     }
 }

@@ -4,9 +4,10 @@ namespace FO3SessionTool;
 /// Settings of the loop. The cards of the target level pile up until their total value reaches TradeMin, then they are all traded
 /// (never more than TradeMax, the game's limit per trade). MaxLossRounds: stop after that many trades in a row that ended
 /// with less EP than the interval before them started with. StorageSlots: size of the card storage (200 in the game); when it is
-/// full and nothing can be merged or traded any more, the run stops.
+/// full and nothing can be merged or traded any more, the run stops. StopBelowEp (0 = off): never buy when the EP left afterwards
+/// would be under this amount; the run ends when nothing else can make progress.
 /// </summary>
-public sealed record CycleOptions(long TradeMin = 900_000_000, long TradeMax = 1_000_000_000, int MaxLossRounds = 2, int StorageSlots = 200);
+public sealed record CycleOptions(long TradeMin = 900_000_000, long TradeMax = 1_000_000_000, int MaxLossRounds = 2, int StorageSlots = 200, long StopBelowEp = 0);
 
 /// <summary>One trade round: the cost of the cards of one batch against what the trade of that batch paid.</summary>
 public sealed record RoundStat(int Round, int Bought, int Merged, int Cards, long CardValue, long Cost, long IncomeEp, long ReceivedPlayerPrice)
@@ -96,6 +97,7 @@ public sealed class CycleRunner
             if (!valid) return $"Phiên đã hết hạn ({detail}). Hãy đăng nhập lại.";
             await _api.GetWalletAsync(tok);
             _spent = _spentAtReserve = 0;
+            if (opt.StopBelowEp > 0 && Ep() < opt.StopBelowEp) return $"EP hiện có ({Ep():N0}) đã dưới mức dừng {opt.StopBelowEp:N0}.";
 
             // starting stock: every usable card of this player (outside the lineup)
             var inv = await _api.GetInventoryAsync(tok);
@@ -162,7 +164,7 @@ public sealed class CycleRunner
     {
         int players = _targetValue > 0
             ? (int)Math.Max(1, (opt.TradeMin + _targetValue - 1) / _targetValue)
-            : Math.Max(1, plan.Quantity / Math.Max(1, _need[plan.Target]));
+            : 1;   // value of a target card not known yet: start with one player's worth of +1 cards
         return players * _need[plan.Target];
     }
 
@@ -205,6 +207,13 @@ public sealed class CycleRunner
         if (Ep() < cheapest.Price + 2 * _lastFee)
         {
             _buyBlock = $"Không đủ EP để mua tiếp (giá {cheapest.Price:N0}, còn {Ep():N0}).";
+            _buyBlockedEp = true;
+            await Pacing.Wait(3, 6, pace, tok);
+            return;
+        }
+        if (opt.StopBelowEp > 0 && Ep() - cheapest.Price - 2 * _lastFee < opt.StopBelowEp)
+        {
+            _buyBlock = $"EP còn lại sau khi mua sẽ dưới mức dừng {opt.StopBelowEp:N0} (hiện còn {Ep():N0}, giá thẻ {cheapest.Price:N0}).";
             _buyBlockedEp = true;
             await Pacing.Wait(3, 6, pace, tok);
             return;
