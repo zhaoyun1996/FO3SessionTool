@@ -32,7 +32,7 @@ public sealed class UpgradeTab : UserControl
     private readonly DarkRadio _byCards = new() { Text = "Số thẻ +1", Checked = true, Margin = new Padding(3, 5, 14, 5) };
     private readonly DarkRadio _byPlayers = new() { Text = "Số cầu thủ", Margin = new Padding(3, 5, 3, 5) };
     private readonly DarkNumber _cnt = new() { Minimum = 1, Maximum = 999, Value = 1, Anchor = AnchorStyles.Left, Width = 130, Visible = false };
-    private readonly Label _qtyLabel = new() { Text = "Số thẻ +1 mua", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(3, 0, 3, 0) };
+    private readonly Label _qtyLabel = new() { Text = "Số thẻ +1 mua", AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Margin = new Padding(3, 0, 3, 0) };
     private readonly Label _qtyNote = new() { AutoSize = true, ForeColor = Theme.Dim, Anchor = AnchorStyles.Left, Margin = new Padding(8, 0, 0, 0) };
     private readonly DarkNumber _maxPrice = new() { Minimum = 0, Maximum = 1_000_000_000_000M, ThousandsSeparator = true, Increment = 1000, Anchor = AnchorStyles.Left | AnchorStyles.Right };
     private readonly DarkRadio[] _tgt = new DarkRadio[MaxLevel + 1];   // target level radios, +5 .. +10
@@ -44,13 +44,13 @@ public sealed class UpgradeTab : UserControl
     private readonly DarkRadio _outSell = new() { Text = "Bán thị trường", Margin = new Padding(3, 5, 3, 5) };
     private readonly DarkRadio _collectAuto = new() { Text = "Tự động", Checked = true };
     private readonly DarkRadio _collectManual = new() { Text = "Thủ công", Margin = new Padding(3, 5, 3, 5) };
-    private readonly Label _outLabel = new() { Text = "Khi ép đủ mức", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(3, 0, 8, 0), Visible = false };
-    private readonly Label _collectLabel = new() { Text = "Nhận tiền bán", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(3, 0, 8, 0), Visible = false };
+    private readonly Label _outLabel = new() { Text = "Khi ép đủ mức", AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Margin = new Padding(3, 0, 8, 0), Visible = false };
+    private readonly Label _collectLabel = new() { Text = "Nhận tiền bán", AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Margin = new Padding(3, 0, 8, 0), Visible = false };
     private readonly DarkNumber _tradeMin = new() { Minimum = 1, Maximum = 1_000_000_000, Value = 900_000_000, ThousandsSeparator = true, Increment = 10_000_000, Anchor = AnchorStyles.Left, Width = 160 };
     private readonly DarkNumber _stopBelow = new() { Minimum = 0, Maximum = 1_000_000_000_000M, Value = 0, ThousandsSeparator = true, Increment = 100_000_000, Anchor = AnchorStyles.Left, Width = 160 };
-    private readonly Label _stopBelowLabel = new() { Text = "Dừng khi EP dưới", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(3, 0, 8, 0), Visible = false };
+    private readonly Label _stopBelowLabel = new() { Text = "EP tối thiểu", AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Margin = new Padding(3, 0, 8, 0), Visible = false };
     private TableLayoutPanel _buyGrid = null!;
-    private readonly Label _tradeMinLabel = new() { Text = "Đổi khi từ (EP)", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(3, 0, 8, 0), Visible = false };
+    private readonly Label _tradeMinLabel = new() { Text = "Đổi khi từ (EP)", AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Margin = new Padding(3, 0, 8, 0), Visible = false };
     private readonly DarkCombo _pace = new() { DropDownStyle = ComboBoxStyle.DropDownList, Anchor = AnchorStyles.Left | AnchorStyles.Right };
     private static readonly double[] PaceFactor = { 1.8, 1.0, 0.5 };
 
@@ -171,23 +171,15 @@ public sealed class UpgradeTab : UserControl
         var box = new DarkGroup { Text = "2. Nguồn thẻ", Dock = DockStyle.Fill };
         var t = Grid(2, 11);
         _buyGrid = t;
-        t.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120));
+        t.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 128));
         t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         for (int i = 0; i < 10; i++) t.RowStyles.Add(new RowStyle(SizeType.Absolute, Theme.RowH));
         t.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
-        // first radio of each pair gets the same width so the second column lines up across the rows
-        foreach (var r in new[] { _modeBuy, _byCards, _runOnce }) { r.AutoSize = false; r.Width = 92; r.Margin = new Padding(3, 5, 0, 5); }
-        t.Controls.Add(Lbl("Nguồn thẻ"), 0, 0);
-        var modes = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = Padding.Empty, Anchor = AnchorStyles.Left };
-        modes.Controls.Add(_modeBuy);
-        modes.Controls.Add(_modeStock);
-        t.Controls.Add(modes, 1, 0);
-        t.Controls.Add(Lbl("Mua theo"), 0, 2);
-        var by = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = Padding.Empty, Anchor = AnchorStyles.Left };
-        by.Controls.Add(_byCards);
-        by.Controls.Add(_byPlayers);
-        t.Controls.Add(by, 1, 2);
+        t.Controls.Add(RowLbl("Nguồn thẻ"), 0, 0);
+        t.Controls.Add(Pair(_modeBuy, _modeStock), 1, 0);
+        t.Controls.Add(RowLbl("Mua theo"), 0, 2);
+        t.Controls.Add(Pair(_byCards, _byPlayers), 1, 2);
         t.Controls.Add(_qtyLabel, 0, 3);
         _qty.Anchor = AnchorStyles.Left; _qty.Width = 130;
         var qtyRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(3, 0, 3, 0), Padding = Padding.Empty, Anchor = AnchorStyles.Left };
@@ -198,28 +190,18 @@ public sealed class UpgradeTab : UserControl
         t.Controls.Add(qtyRow, 1, 3);
         // no "max price per card" input: the ceiling is always the game's own upper price (resolved in MainForm when a run starts)
         t.RowStyles[4] = new RowStyle(SizeType.Absolute, 0);
-        t.Controls.Add(Lbl("Tốc độ"), 0, 5);
+        t.Controls.Add(RowLbl("Tốc độ"), 0, 5);
         _pace.Anchor = AnchorStyles.Left; _pace.Width = 190;
         t.Controls.Add(_pace, 1, 5);
-        t.Controls.Add(Lbl("Cách chạy"), 0, 1);
-        var how = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = Padding.Empty, Anchor = AnchorStyles.Left };
-        how.Controls.Add(_runOnce);
-        how.Controls.Add(_runLoop);
-        t.Controls.Add(how, 1, 1);
+        t.Controls.Add(RowLbl("Cách chạy"), 0, 1);
+        t.Controls.Add(Pair(_runOnce, _runLoop), 1, 1);
         t.Controls.Add(_outLabel, 0, 6);
-        foreach (var r in new[] { _outTrade, _collectAuto }) { r.AutoSize = false; r.Width = 92; r.Margin = new Padding(3, 5, 0, 5); }
-        var outRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = Padding.Empty, Anchor = AnchorStyles.Left };
-        outRow.Controls.Add(_outTrade);
-        outRow.Controls.Add(_outSell);
-        t.Controls.Add(outRow, 1, 6);
+        t.Controls.Add(Pair(_outTrade, _outSell), 1, 6);
         t.Controls.Add(_tradeMinLabel, 0, 7);
         _tradeMin.Margin = new Padding(3, 0, 3, 0);
         t.Controls.Add(_tradeMin, 1, 7);
         t.Controls.Add(_collectLabel, 0, 8);
-        var colRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = Padding.Empty, Anchor = AnchorStyles.Left };
-        colRow.Controls.Add(_collectAuto);
-        colRow.Controls.Add(_collectManual);
-        t.Controls.Add(colRow, 1, 8);
+        t.Controls.Add(Pair(_collectAuto, _collectManual), 1, 8);
         t.Controls.Add(_stopBelowLabel, 0, 9);
         _stopBelow.Margin = new Padding(3, 0, 3, 0);
         t.Controls.Add(_stopBelow, 1, 9);
@@ -319,6 +301,22 @@ public sealed class UpgradeTab : UserControl
         t.SetColumnSpan(_status, 2);
         return t;
     }
+
+    /// <summary>Two radios in two fixed columns, so every pair of the grid lines up whatever the texts (and their changes) are.</summary>
+    private static Control Pair(DarkRadio a, DarkRadio b)
+    {
+        var t = new TableLayoutPanel { ColumnCount = 2, RowCount = 1, Width = 228, Height = Theme.RowH, Margin = new Padding(0), Anchor = AnchorStyles.Left };
+        t.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 90));
+        t.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 138));
+        t.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        foreach (var r in new[] { a, b }) { r.AutoSize = false; r.Dock = DockStyle.Fill; r.Margin = new Padding(3, 0, 0, 0); }
+        t.Controls.Add(a, 0, 0);
+        t.Controls.Add(b, 1, 0);
+        return t;
+    }
+
+    /// <summary>Label of a row of the "Nguồn thẻ" grid: fills its cell and centres the text vertically, like the radio pairs next to it.</summary>
+    private static Label RowLbl(string text) => new() { Text = text, AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Margin = new Padding(3, 0, 8, 0) };
 
     private static Label Lbl(string text) => new() { Text = text, AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(3, 0, 8, 0) };
     private static Label Hint(string text) => new() { Text = text, AutoSize = true, ForeColor = Theme.Dim, Anchor = AnchorStyles.Left, Margin = new Padding(6, 0, 3, 0) };
