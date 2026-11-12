@@ -8,9 +8,9 @@ namespace FO3SessionTool;
 /// would be under this amount; the run ends when nothing else can make progress.
 /// SellMode: instead of trading, every card that reaches the target level is listed at once on the transfer market at the highest
 /// price the game allows (no trade threshold; the loss rule applies per sold card); AutoCollect: claim the money of sold cards automatically
-/// (TODO: switched off in the UI for now).
+/// (only offers of the player being worked on).
 /// </summary>
-public sealed record CycleOptions(long TradeMin = 900_000_000, long TradeMax = 1_000_000_000, int MaxLossRounds = 2, int StorageSlots = 200, long StopBelowEp = 0, bool SellMode = false, bool AutoCollect = false);
+public sealed record CycleOptions(long TradeMin = 900_000_000, long TradeMax = 1_000_000_000, int MaxLossRounds = 2, int StorageSlots = 200, long StopBelowEp = 0, bool SellMode = false, bool AutoCollect = true);
 
 /// <summary>One trade round: the cost of the cards of one batch against what the trade of that batch paid.</summary>
 public sealed record RoundStat(int Round, int Bought, int Merged, int Cards, long CardValue, long Cost, long IncomeEp, long ReceivedPlayerPrice)
@@ -142,7 +142,7 @@ public sealed class CycleRunner
             if (opt.SellMode)
             {
                 workers.Add(Loop("Bán", () => SellOnce(plan, opt, pace, tok), tok));
-                if (opt.AutoCollect) workers.Add(Loop("Nhận tiền", () => CollectOnce(opt, pace, tok), tok));
+                if (opt.AutoCollect) workers.Add(Loop("Nhận tiền", () => CollectOnce(plan.Spid, pace, tok), tok));
             }
             else workers.Add(Loop("Giao dịch", () => TradeOnce(plan, opt, pace, tok), tok));
             await Task.WhenAll(workers);
@@ -153,7 +153,7 @@ public sealed class CycleRunner
         if (opt.SellMode && opt.AutoCollect && _sold > 0)
         {
             // one last pass so money that arrived while stopping is not left waiting
-            try { using var last = new CancellationTokenSource(TimeSpan.FromSeconds(20)); await CollectNow(last.Token); } catch { }
+            try { using var last = new CancellationTokenSource(TimeSpan.FromSeconds(20)); await CollectNow(plan.Spid, last.Token); } catch { }
         }
         string summary;
         lock (_lock)
@@ -579,15 +579,15 @@ public sealed class CycleRunner
     }
 
     /// <summary>Claims the money of every sold listing.</summary>
-    private async Task CollectOnce(CycleOptions opt, double pace, CancellationToken tok)
+    private async Task CollectOnce(long spid, double pace, CancellationToken tok)
     {
         await Pacing.Wait(12, 20, pace, tok);
-        await CollectNow(tok);
+        await CollectNow(spid, tok);
     }
 
-    private async Task CollectNow(CancellationToken tok)
+    private async Task CollectNow(long spid, CancellationToken tok)
     {
-        var offers = await _api.GetOffersAsync(tok);
+        var offers = (await _api.GetOffersAsync(tok)).Where(o => o.Spid == spid).ToList();   // never touch the sales of other players
         _pending = offers.Count(o => o.Status == "waiting");
         foreach (var o in offers.Where(o => o.Status != "waiting"))
         {

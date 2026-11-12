@@ -595,7 +595,7 @@ public sealed class MainForm : Form
             {
                 var sp = await _api.GetSellPriceAsync(plan.Spid, plan.Target);
                 sellNote = sp != null
-                    ? $"\n\nSAU KHI ÉP XONG: các thẻ +{plan.Target} vừa ép ra được đăng bán NGAY lên thị trường chuyển nhượng ở giá cao nhất game cho phép ({sp.Upper:N0} EP/thẻ), phí đăng {sp.Fee:N0}/thẻ, game giữ 20% khi bán xong. Tiền bán được bạn tự nhận trong game."
+                    ? $"\n\nSAU KHI ÉP XONG: các thẻ +{plan.Target} vừa ép ra được đăng bán NGAY lên thị trường chuyển nhượng ở giá cao nhất game cho phép ({sp.Upper:N0} EP/thẻ), phí đăng {sp.Fee:N0}/thẻ, game giữ 20% khi bán xong. " + (plan.CollectAfter ? "Tool sẽ chờ tối đa 3 phút và tự nhận tiền." : "Tiền bán được bạn tự nhận trong game.")
                     : "\n\nSAU KHI ÉP XONG: sẽ đăng bán các thẻ vừa ép ra ở giá cao nhất (chưa đọc được khung giá).";
             }
             catch (Exception ex) { sellNote = "\n\nSAU KHI ÉP XONG: sẽ đăng bán (không đọc được khung giá: " + ex.Message + ")."; }
@@ -622,7 +622,9 @@ public sealed class MainForm : Form
             {
                 var sold = await MarketSeller.SellAsync(_api, plan, runner.ProducedTargetIds, Log, _upgrade.SetStepState, _upCts.Token);
                 Log($"[Bán] KẾT THÚC: đã đăng bán {sold.Listed} thẻ +{plan.Target} (tổng giá {sold.ListedValue:N0} EP, phí đăng {sold.Fees:N0})." +
-                    (sold.Problem != null ? " Dừng vì: " + sold.Problem : "") + (sold.Listed > 0 ? " Tiền bán được hãy nhận trong game khi có người mua." : ""));
+                    (sold.Problem != null ? " Dừng vì: " + sold.Problem : "") +
+                    (plan.CollectAfter ? $" Đã nhận tiền {sold.Collected}/{sold.Listed} thẻ ({sold.CollectedEp:N0} EP)." + (sold.Collected < sold.Listed ? " Phần còn lại hãy nhận trong game khi có người mua." : "")
+                                       : sold.Listed > 0 ? " Tiền bán được hãy nhận trong game khi có người mua." : ""));
             }
         }
         catch (OperationCanceledException) { Log("[Ép thẻ] Đã dừng theo yêu cầu."); _upgrade.SetProgress(0, 1, "Đã dừng."); }

@@ -7,7 +7,7 @@ public enum StepState { Pending, Running, Done, Error }
 /// UseInventory: skip buying and merge the cards already in the storage. Pace: multiplier on the human-like waits.
 public sealed record UpgradePlan(
     long Spid, string Name, int Quantity, long MaxPrice, int Target, IReadOnlyDictionary<int, (int A, int B)> Rules,
-    bool UseInventory = false, double Pace = 1.0, bool SellAfter = false);
+    bool UseInventory = false, double Pace = 1.0, bool SellAfter = false, bool CollectAfter = false);
 
 /// <summary>"Ép thẻ tự động" tab: pick a player, set how many +1 cards to buy and the merge rules, then run.</summary>
 public sealed class UpgradeTab : UserControl
@@ -225,7 +225,7 @@ public sealed class UpgradeTab : UserControl
         t.Controls.Add(_stopBelow, 1, 9);
         _tip.SetToolTip(_outSell, "Thẻ vừa ép lên đúng mức đích được đăng bán ngay trên thị trường chuyển nhượng ở giá CAO NHẤT game cho phép (không giao dịch). Phí đăng 1% khi đăng, game giữ 20% khi bán xong.");
         _tip.SetToolTip(_collectManual, "Tool không nhận tiền: bạn tự nhận trong game (mục lệnh bán). Tiền chưa nhận thì chưa dùng được để mua tiếp.");
-        _tip.SetToolTip(_collectAuto, "Thẻ bán xong thì tool tự bấm nhận tiền. Khi còn lệnh chờ người mua, tool không dừng dù EP đã hết.");
+        _tip.SetToolTip(_collectAuto, "Thẻ bán xong thì tool tự bấm nhận tiền (chỉ lệnh bán của cầu thủ đang chọn). Xoay vòng: khi còn lệnh chờ người mua, tool không dừng dù EP đã hết. Một lần: đăng bán xong tool chờ tối đa 3 phút để nhận tiền.");
         _tip.SetToolTip(_stopBelow, "Không mua thêm nếu số EP còn lại sau khi mua sẽ dưới mức này; khi không còn gì ép/đổi được thì dừng. 0 = không đặt mức.");
         _tip.SetToolTip(_tradeMin, "Khi tổng giá trị các thẻ đích chưa đăng ký đạt mức này thì đổi hết (tối đa 1 tỷ EP mỗi lần giao dịch).");
         _tip.SetToolTip(_runLoop, "Xoay vòng: mua → ép → giao dịch. Mua và ép liên tục; khi tổng giá trị thẻ đích đạt 900 triệu - 1 tỷ EP thì đổi hết (chọn phương án lớn nhất). Lặp đến khi hết EP, lỗ 2 vòng liên tiếp hoặc bấm Dừng.");
@@ -585,7 +585,7 @@ public sealed class UpgradeTab : UserControl
         bool sell = _outSell.Checked;
         Row(6, true);            // after the merges: keep / sell (one-shot) or trade / sell (loop)
         Row(7, loop && !sell);   // trade threshold
-        Row(8, false);           // TODO: auto-collect of the money of sold cards (hidden for now; AutoCollect stays off)
+        Row(8, sell);            // money of sold cards: collected by the tool or by hand
         Row(9, loop);
     }
 
@@ -631,8 +631,8 @@ public sealed class UpgradeTab : UserControl
         double pace = PaceFactor[_pace.SelectedIndex < 0 ? 1 : _pace.SelectedIndex];
         bool loopMode = _runLoop.Checked && !StockMode;
         var plan = new UpgradePlan(spid, name, StockMode || loopMode ? 0 : BuyQty, StockMode ? 0 : (long)_maxPrice.Value,
-            TargetLevel, Rules, StockMode, pace, SellAfter: !_runLoop.Checked && _outSell.Checked);
-        if (_runLoop.Checked && !StockMode) CycleRequested?.Invoke(plan, new CycleOptions(TradeMin: (long)_tradeMin.Value, StopBelowEp: (long)_stopBelow.Value, SellMode: _outSell.Checked, AutoCollect: false /* TODO: _collectAuto.Checked once auto-collect is switched on */));
+            TargetLevel, Rules, StockMode, pace, SellAfter: !_runLoop.Checked && _outSell.Checked, CollectAfter: _collectAuto.Checked);
+        if (_runLoop.Checked && !StockMode) CycleRequested?.Invoke(plan, new CycleOptions(TradeMin: (long)_tradeMin.Value, StopBelowEp: (long)_stopBelow.Value, SellMode: _outSell.Checked, AutoCollect: _collectAuto.Checked));
         else RunRequested?.Invoke(plan);
     }
 }

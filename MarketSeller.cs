@@ -7,7 +7,7 @@ namespace FO3SessionTool;
 /// </summary>
 public static class MarketSeller
 {
-    public sealed record Result(int Listed, long ListedValue, long Fees, string? Problem);
+    public sealed record Result(int Listed, long ListedValue, long Fees, string? Problem, int Collected = 0, long CollectedEp = 0);
 
     public static async Task<Result> SellAsync(GameApi api, UpgradePlan plan, IReadOnlyList<string> cardIds,
         Action<string> log, Action<int, StepState> step, CancellationToken ct)
@@ -43,6 +43,35 @@ public static class MarketSeller
             log($"[Bán] Đã đăng bán {listed}/{cardIds.Count}: giá {price.Upper:N0}, game giữ {(res.Offer?.CompleteFee > 0 ? res.Offer.CompleteFee : price.Upper / 5):N0} khi bán xong.");
         }
         step(stepIndex, StepState.Done);
-        return new Result(listed, listed * price.Upper, fees, null);
+        if (!plan.CollectAfter || listed == 0) return new Result(listed, listed * price.Upper, fees, null);
+
+        // wait (a few minutes at most) for the buyers and collect the money of the cards listed just now
+        log("[Bán] Chờ người mua và tự nhận tiền (tối đa 3 phút)...");
+        var mine = new HashSet<string>(cardIds);
+        int collected = 0; long got = 0;
+        var seen = new HashSet<string>();
+        var until = DateTime.UtcNow.AddMinutes(3);
+        try
+        {
+            while (collected < listed && DateTime.UtcNow < until)
+            {
+                var offers = (await api.GetOffersAsync(ct)).Where(o => mine.Contains(o.CardId)).ToList();
+                foreach (var o in offers.Where(o => o.Status != "waiting"))
+                {
+                    if (o.Status != "sold" && o.Status != "completed")
+                    {
+                        if (seen.Add("s" + o.Status)) log($"[Bán] Lệnh bán có trạng thái lạ \"{o.Status}\", bỏ qua.");
+                        continue;
+                    }
+                    var r = await api.CollectOfferAsync(o.OfferId, CancellationToken.None);
+                    if (r.Ok) { collected++; got += r.Received; log($"[Bán] Đã nhận {r.Received:N0} EP (bán {o.Price:N0}). EP hiện có {api.LastWallet?.Ep ?? 0:N0}."); }
+                    else if (seen.Add("f" + o.OfferId)) log($"[Bán] Nhận tiền thất bại: {GameApi.Trim(r.Raw)}");
+                }
+                if (collected >= listed) break;
+                await Task.Delay(TimeSpan.FromSeconds(8), ct);
+            }
+        }
+        catch (OperationCanceledException) { log("[Bán] Đã dừng chờ nhận tiền."); }
+        return new Result(listed, listed * price.Upper, fees, null, collected, got);
     }
 }
