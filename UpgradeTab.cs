@@ -584,7 +584,7 @@ public sealed class UpgradeTab : UserControl
         bool sell = _outSell.Checked;
         Row(6, loop);
         Row(7, loop && !sell);   // trade threshold
-        Row(8, loop && sell);    // money collection
+        Row(8, false);           // TODO: auto-collect of the money of sold cards (hidden for now; AutoCollect stays off)
         Row(9, loop);
     }
 
@@ -627,7 +627,7 @@ public sealed class UpgradeTab : UserControl
         bool loopMode = _runLoop.Checked && !StockMode;
         var plan = new UpgradePlan(spid, name, StockMode || loopMode ? 0 : BuyQty, StockMode ? 0 : (long)_maxPrice.Value,
             TargetLevel, Rules, StockMode, pace);
-        if (_runLoop.Checked && !StockMode) CycleRequested?.Invoke(plan, new CycleOptions(TradeMin: (long)_tradeMin.Value, StopBelowEp: (long)_stopBelow.Value, SellMode: _outSell.Checked, AutoCollect: _collectAuto.Checked));
+        if (_runLoop.Checked && !StockMode) CycleRequested?.Invoke(plan, new CycleOptions(TradeMin: (long)_tradeMin.Value, StopBelowEp: (long)_stopBelow.Value, SellMode: _outSell.Checked, AutoCollect: false /* TODO: _collectAuto.Checked once auto-collect is switched on */));
         else RunRequested?.Invoke(plan);
     }
 }

@@ -7,9 +7,10 @@ namespace FO3SessionTool;
 /// full and nothing can be merged or traded any more, the run stops. StopBelowEp (0 = off): never buy when the EP left afterwards
 /// would be under this amount; the run ends when nothing else can make progress.
 /// SellMode: instead of trading, every card that reaches the target level is listed at once on the transfer market at the highest
-/// price the game allows (no trade threshold, no loss rule); AutoCollect: claim the money of sold cards automatically.
+/// price the game allows (no trade threshold; the loss rule applies per sold card); AutoCollect: claim the money of sold cards automatically
+/// (TODO: switched off in the UI for now).
 /// </summary>
-public sealed record CycleOptions(long TradeMin = 900_000_000, long TradeMax = 1_000_000_000, int MaxLossRounds = 2, int StorageSlots = 200, long StopBelowEp = 0, bool SellMode = false, bool AutoCollect = true);
+public sealed record CycleOptions(long TradeMin = 900_000_000, long TradeMax = 1_000_000_000, int MaxLossRounds = 2, int StorageSlots = 200, long StopBelowEp = 0, bool SellMode = false, bool AutoCollect = false);
 
 /// <summary>One trade round: the cost of the cards of one batch against what the trade of that batch paid.</summary>
 public sealed record RoundStat(int Round, int Bought, int Merged, int Cards, long CardValue, long Cost, long IncomeEp, long ReceivedPlayerPrice)
@@ -61,6 +62,7 @@ public sealed class CycleRunner
     private string _buyBlock = "";                         // why the buyer cannot buy right now ("" = not blocked)
     private bool _buyBlockedEp;
     private volatile bool _trading, _merging, _selling;
+    private readonly Dictionary<string, long> _cardCost = new();   // card id -> EP that went into it (buy price + merge fees of its whole chain)
     private readonly HashSet<string> _offered = new();     // cards already listed (they may still show up in the storage)
     private int _sold, _pending, _sellFailures, _unknownStatusLogged;
     private long _collected;
@@ -88,7 +90,7 @@ public sealed class CycleRunner
         var tok = _stop.Token;
         _reason = null;
         _bought = _merged = _tradesDone = _roundBought = _roundMerged = _lossStreak = _inFlight = 0;
-        _sold = _pending = _sellFailures = 0; _collected = 0; _offered.Clear(); _statusSeen.Clear();
+        _sold = _pending = _sellFailures = 0; _collected = 0; _offered.Clear(); _statusSeen.Clear(); _cardCost.Clear();
         _round1 = 1; _totalNet = 0; _spent = _spentAtReserve = 0; _targetValue = 0; _lastFee = 0; _buyBlock = ""; _buyBlockedEp = false;
         _lastActivity = DateTime.UtcNow;
         double pace = plan.Pace;
@@ -118,6 +120,7 @@ public sealed class CycleRunner
             }
             _pool = Enumerable.Range(1, plan.Target).ToDictionary(l => l, _ => new List<string>());
             foreach (var c in inv.Where(c => c.Spid == plan.Spid && c.Group == GameApi.GroupNone && c.Grade >= 1 && c.Grade <= plan.Target && !_offered.Contains(c.Id))) _pool[c.Grade].Add(c.Id);
+            foreach (var c0 in inv.Where(c0 => c0.Spid == plan.Spid)) _cardCost[c0.Id] = c0.Value;   // stock we already own: valued at its market price
             LearnTargetValue(inv, plan);
             _cap = Capacity(plan, opt);
             var have = Enumerable.Range(1, plan.Target).Where(l => _pool[l].Count > 0).Select(l => $"{_pool[l].Count}×+{l}");
@@ -283,7 +286,7 @@ public sealed class CycleRunner
         _buyFailures = 0; _waitFreeSince = null;
         if (!_api.LastHadMoney) _api.Spend(cheapest.Price);
         Interlocked.Add(ref _spent, cheapest.Price);
-        lock (_lock) { _pool[1].Add(buy.CardId!); _bought++; _roundBought++; }
+        lock (_lock) { _pool[1].Add(buy.CardId!); _cardCost[buy.CardId!] = cheapest.Price; _bought++; _roundBought++; }
         Interlocked.Increment(ref _cardCount);
         Activity();
         _log($"[Xoay vòng/Mua] Mua thẻ +1 giá {cheapest.Price:N0} (id …{Tail(buy.CardId!)}); trong dây chuyền {Pipeline()}/{_cap} thẻ +1.");
@@ -378,6 +381,7 @@ public sealed class CycleRunner
             if (!_api.LastHadMoney) _api.Spend(pv.EnhancePay);
             Interlocked.Add(ref _spent, pv.EnhancePay);
             job = job with { Main = main, Mat = mat };
+            lock (_lock) _cardCost[main] = _cardCost.GetValueOrDefault(main) + _cardCost.GetValueOrDefault(mat) + pv.EnhancePay;
             done = true;
             _step(step, StepState.Done);
             Activity();
@@ -508,19 +512,12 @@ public sealed class CycleRunner
             await Pacing.Wait(1.5, 3, pace, tok);
             tok.ThrowIfCancellationRequested();   // last chance to stop: nothing is listed yet
 
-            long cost;
-            lock (_lock)
-            {
-                long spentNow = Interlocked.Read(ref _spent);
-                cost = spentNow - _spentAtReserve;   // buys and merges since the previous card was taken out
-                _spentAtReserve = spentNow;
-            }
+            long cost; lock (_lock) cost = _cardCost.GetValueOrDefault(id);   // what went into this very card
             _log($"[Xoay vòng/Bán] Đăng bán thẻ +{plan.Target} (…{Tail(id)}) giá cao nhất {price.Upper:N0} EP (khung {price.Lower:N0}–{price.Upper:N0}), phí đăng {price.Fee:N0}...");
             // committed: a stop request does not interrupt it from here
             var res = await _api.SellAsync(id, price.Upper, CancellationToken.None);
             if (!res.Ok)
             {
-                lock (_lock) _spentAtReserve -= cost;   // the cost still belongs to the next card
                 _step(CycleRunner.TradeStep, StepState.Error);
                 _log($"[Xoay vòng/Bán] Đăng bán thất bại: {GameApi.Trim(res.Raw)}");
                 if (++_sellFailures >= 3) { Stop("Đăng bán thất bại 3 lần liên tiếp: " + GameApi.Trim(res.Raw)); return; }
@@ -537,13 +534,16 @@ public sealed class CycleRunner
                 _offered.Add(id);
                 st = new RoundStat(_round1, _roundBought, _roundMerged, 1, price.Upper, cost + price.Fee, expectedIn, 0);
                 _totalNet += st.Net;
+                _lossStreak = st.Net < 0 ? _lossStreak + 1 : 0;
                 _sold++; _pending++; _round1++; _roundBought = _roundMerged = 0;
             }
+            Interlocked.Decrement(ref _cardCount);   // a listed card leaves the storage, it does not take a slot
             _step(CycleRunner.TradeStep, StepState.Done);
             Activity();
             _round?.Invoke(st);
-            _log($"[Xoay vòng] ĐÃ ĐĂNG BÁN thẻ {_sold}: giá {price.Upper:N0}, game giữ {cut:N0} khi bán xong → nhận ≈{expectedIn:N0}; chi phí mua+ép {cost:N0} + phí đăng {price.Fee:N0}, " +
+            _log($"[Xoay vòng] ĐÃ ĐĂNG BÁN thẻ {_sold}: giá {price.Upper:N0}, game giữ {cut:N0} khi bán xong → nhận ≈{expectedIn:N0}; chi phí của thẻ này (mua+ép) {cost:N0} + phí đăng {price.Fee:N0}, " +
                  (st.Net >= 0 ? "LÃI " : "LỖ ") + $"≈{Math.Abs(st.Net):N0} EP (ước tính). Tổng ước tính {Signed(_totalNet)} EP.");
+            if (_lossStreak >= opt.MaxLossRounds) Stop($"Đã lỗ {_lossStreak} lần bán liên tiếp, dừng theo cài đặt.");
         }
         finally
         {

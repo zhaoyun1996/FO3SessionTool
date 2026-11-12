@@ -604,8 +604,8 @@ public sealed class MainForm : Form
                 : $"• GIAO DỊCH khi tổng giá trị thẻ +{plan.Target} đạt {opt.TradeMin:N0} - {opt.TradeMax:N0} EP: đổi hết (chọn phương án lớn nhất), không giữ lại thẻ nào." + nl) +
             "   Gồm cả thẻ +" + plan.Target + " của cầu thủ này đang có sẵn trong kho (ngoài đội hình); các thẻ thấp hơn có sẵn cũng được dùng để ép." + nl + nl +
             $"Rule:{nl}{rules}{nl}{nl}" +
-            $"Dừng khi: hết EP{(opt.StopBelowEp > 0 ? $" (không mua nếu EP còn lại sau khi mua dưới {opt.StopBelowEp:N0})" : "")}, {(opt.SellMode ? "" : $"lỗ {opt.MaxLossRounds} lần giao dịch liên tiếp, ")}phiên hết hạn, có lỗi, hoặc bạn bấm Dừng." + nl +
-            (opt.SellMode ? "Chế độ bán KHÔNG có điều kiện dừng khi lỗ (xem lãi/lỗ ước tính trong nhật ký). Mỗi lệnh đăng bán sẽ không hỏi lại. Thao tác này tiêu tốn EP thật." : "Mỗi giao dịch KHÔNG hoàn tác và sẽ không hỏi lại. Thao tác này tiêu tốn EP thật.") + nl + nl + "Bắt đầu?",
+            $"Dừng khi: hết EP{(opt.StopBelowEp > 0 ? $" (không mua nếu EP còn lại sau khi mua dưới {opt.StopBelowEp:N0})" : "")}, lỗ {opt.MaxLossRounds} lần {(opt.SellMode ? "bán" : "giao dịch")} liên tiếp, phiên hết hạn, có lỗi, hoặc bạn bấm Dừng." + nl +
+            (opt.SellMode ? "Lãi/lỗ mỗi lần bán là ước tính (giá bán trừ 20% và phí đăng, trừ chi phí mua+ép). Mỗi lệnh đăng bán sẽ không hỏi lại. Thao tác này tiêu tốn EP thật." : "Mỗi giao dịch KHÔNG hoàn tác và sẽ không hỏi lại. Thao tác này tiêu tốn EP thật.") + nl + nl + "Bắt đầu?",
             "Xác nhận xoay vòng tự động", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
         if (ask != DialogResult.Yes) return;
 
