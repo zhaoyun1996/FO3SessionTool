@@ -96,7 +96,7 @@ public sealed class LoginDialog : Form
         catch (Exception ex)
         {
             var file = WriteErrorLog(user, ex);
-            if (!IsDisposed) SetStatus($"Đăng nhập thất bại: {ex.GetType().Name}: {ex.Message}" + (file != null ? "  (log: %APPDATA%\FO3SessionTool\logs)" : ""), Theme.Danger);
+            if (!IsDisposed) SetStatus($"Đăng nhập thất bại: {ex.GetType().Name}: {ex.Message}" + (file != null ? "  (log: %APPDATA%\\FO3SessionTool\\logs)" : ""), Theme.Danger);
         }
         finally
         {
