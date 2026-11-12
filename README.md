@@ -102,6 +102,12 @@ dotnet publish FO3SessionTool.csproj -c Release -r win-x64 --self-contained `
 
 Chép `config.json` vào `dist\` cạnh `FO3SessionTool.exe`. Lệnh publish sẽ lỗi nếu `dist\FO3SessionTool.exe` đang chạy; hãy đóng tool trước.
 
+### 4.1. Chạy trên máy khác, và .NET
+
+- Tool nhắm tới **.NET 10** (`net10.0-windows`, WinForms), nhưng bản trong `dist\` được publish **self-contained**: runtime .NET nằm sẵn trong file exe. Máy khác **không cần cài .NET** (kể cả .NET 8); chỉ cần Windows 10 (1607 trở lên) hoặc Windows 11, 64-bit. Chép `FO3SessionTool.exe` cùng `config.json` vào một thư mục là chạy.
+- `config.json` chứa `hwid` của máy bạn đã bắt launcher (mục 2.1). Máy khác dùng chung file này thì server thấy cùng một mã phần cứng; nếu đăng nhập thất bại, xem mục 8 và file log `%APPDATA%\FO3SessionTool\logs\login-YYYYMMDD.log`.
+- Nếu máy đó cần **tự build** và chỉ có SDK .NET 8: mã nguồn biên dịch được với .NET 8 khi đổi `<TargetFramework>` trong `FO3SessionTool.csproj` từ `net10.0-windows` thành `net8.0-windows` (đã thử build trên một bản copy, không phải sửa mã). Lệnh publish giữ nguyên.
+
 Lần đầu mở: bấm **Đăng nhập**, nhập tài khoản và mật khẩu. Tool xếp hàng giống launcher, đổi token lấy phiên game, rồi lưu phiên (mã hóa DPAPI, chỉ tài khoản Windows hiện tại giải mã được) tại `%APPDATA%\FO3SessionTool\session.dat`. Lần sau tool tự khôi phục phiên nếu server còn chấp nhận. Nhật ký lưu ở `%APPDATA%\FO3SessionTool\logs\`.
 
 ---
@@ -167,6 +173,7 @@ Nếu báo chưa có phiên hoặc phiên hết hạn: chạy lại bước 1 v�
 | Đăng nhập báo `QUEUE` rất lâu | Bình thường khi đông người; tool tự hỏi lại mỗi `queuePollSeconds` giây |
 | mitmdump không bắt được gì | Chưa chạy bằng Administrator, hoặc bật mitmdump sau khi đã mở game |
 | `publish` lỗi `MSB4018` | `dist\FO3SessionTool.exe` đang chạy, đóng tool |
+| Máy khác không đăng nhập được | Xem thông báo lỗi màu đỏ trong hộp đăng nhập và `%APPDATA%\FO3SessionTool\logs\login-*.log`; nghi ngờ `hwid` dùng chung (mục 4.1) |
 
 ---
 
