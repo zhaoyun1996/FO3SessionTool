@@ -208,3 +208,11 @@ Tool chèn thời gian chờ ngẫu nhiên giữa các thao tác (ví dụ 0,8 �
 1. Chạy `capture\run_game_capture.bat` (Administrator), làm lại thao tác bị lỗi trong game.
 2. Mở `game_capture_redacted.txt`, tìm đường dẫn liên quan và so với các mẫu ở trên.
 3. Sửa `GameApi.cs` cho khớp, thêm mẫu mới vào đây và ghi rõ mẫu nào là **[capture]**.
+
+## Bán thẻ lên thị trường chuyển nhượng [capture 2026-11-12, Rivaldo +2]
+
+- `GET /transfer/price/{spid}/{grade}` → `{"default":15900000,"lower":12700000,"upper":19100000,"lowest":0,"registrationFee":159000,"spid":…,"grade":…}`. Khung giá được phép đăng bán: **`upper` là giá cao nhất**, `lower` là thấp nhất; `registrationFee` là phí đăng ký (1% giá mặc định).
+- `POST /transfer/offer` body `{"price":19100000,"playerobjectid":"<id thẻ trong coach/me>"}` → `{"result":true,"resources":[{"uri":"/transfer/my/offer/list","body":{"offers":[{"id","spid","grade","price","status":"waiting","issuedat","completefee":{"base":3820000},"limitpricemin","limitpricemax"}]}}]}`.
+- `GET /transfer/my/offer/list` → `{"offerexpireoffset":86400000,"offers":[…]}`: danh sách đang bán; chào bán hết hạn sau 24 giờ (`offerexpireoffset`).
+- Tham chiếu: `GET /transfer/search/{spid}` (rao hiện tại, `[]` nếu chưa ai bán), `GET /transfer/top/50`.
+- Chưa bắt được: lúc thẻ bán xong (tiền nhận, phí `completefee`) và cách hủy lệnh bán.
