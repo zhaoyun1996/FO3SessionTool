@@ -47,8 +47,9 @@ public sealed class LauncherClient
     private async Task<JsonNode> PostAsync(JsonObject body, CancellationToken ct)
     {
         using var resp = await _http.PostAsJsonAsync("/web/api/launcher/login", body, ct);
-        resp.EnsureSuccessStatusCode();
         var text = await resp.Content.ReadAsStringAsync(ct);
+        if (!resp.IsSuccessStatusCode)
+            throw new InvalidOperationException($"Launcher HTTP {(int)resp.StatusCode} {resp.ReasonPhrase}: {(text.Length > 300 ? text[..300] : text)}");
         return JsonNode.Parse(text) ?? throw new InvalidOperationException("Empty login response");
     }
 }
