@@ -57,8 +57,12 @@ public sealed class UpgradeRunner
     }
 
     /// <summary>Returns true when every step finished. Throws OperationCanceledException when stopped.</summary>
+    /// <summary>Cards that reached the target level during the last run (older target-level cards are not included).</summary>
+    public List<string> ProducedTargetIds { get; private set; } = new();
+
     public async Task<bool> RunAsync(UpgradePlan plan, CancellationToken ct)
     {
+        ProducedTargetIds = new();
         double pace = plan.Pace;
         var pool = Enumerable.Range(0, MaxLevel + 1).ToDictionary(l => l, _ => new List<string>());   // level -> card ids we own
         long spent = 0;
@@ -138,6 +142,7 @@ public sealed class UpgradeRunner
         else if (plan.UseInventory) return Fail(0, "Không đọc được kho thẻ. Dừng.");
         else _log("[Ép thẻ] Không đọc được kho, chỉ dùng các thẻ vừa mua.");
 
+        var targetBefore = pool[plan.Target].ToHashSet();
         var have = Enumerable.Range(1, plan.Target).Where(l => pool[l].Count > 0).Select(l => $"{pool[l].Count}×+{l}").ToList();
         if (have.Count == 0) return Fail(0, "Không có thẻ nào của cầu thủ này (ngoài đội hình) để ép.");
         _step(0, StepState.Done);
@@ -193,6 +198,7 @@ public sealed class UpgradeRunner
             if (lvl < plan.Target) await Pacing.Wait(2, 4, pace, ct);
         }
 
+        ProducedTargetIds = pool[plan.Target].Where(id => !targetBefore.Contains(id)).ToList();
         var left = Enumerable.Range(1, plan.Target - 1).Where(l => pool[l].Count > 0).Select(l => $"{pool[l].Count}×+{l}").ToList();
         _progress(1, 1, $"Hoàn tất: {pool[plan.Target].Count} thẻ +{plan.Target}");
         _log($"[Ép thẻ] HOÀN TẤT: {pool[plan.Target].Count} thẻ +{plan.Target}."

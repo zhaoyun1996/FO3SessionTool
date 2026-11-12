@@ -3,10 +3,11 @@ namespace FO3SessionTool;
 public enum StepState { Pending, Running, Done, Error }
 
 /// <summary>Everything the auto-upgrade run needs. Rules: target level -> (material A, material B).</summary>
+/// SellAfter (one-shot run): list the cards that reached the target level on the market at the highest allowed price.
 /// UseInventory: skip buying and merge the cards already in the storage. Pace: multiplier on the human-like waits.
 public sealed record UpgradePlan(
     long Spid, string Name, int Quantity, long MaxPrice, int Target, IReadOnlyDictionary<int, (int A, int B)> Rules,
-    bool UseInventory = false, double Pace = 1.0);
+    bool UseInventory = false, double Pace = 1.0, bool SellAfter = false);
 
 /// <summary>"Ép thẻ tự động" tab: pick a player, set how many +1 cards to buy and the merge rules, then run.</summary>
 public sealed class UpgradeTab : UserControl
@@ -120,7 +121,8 @@ public sealed class UpgradeTab : UserControl
         _results.DrawItem += DrawResultItem;
         _modeStock.CheckedChanged += (_, _) => OnModeChanged();
         _runLoop.CheckedChanged += (_, _) => UpdateStepVisibility();
-        _outSell.CheckedChanged += (_, _) => { _steps[MaxLevel].Text = _outSell.Checked ? "Bán" : "Giao dịch"; ApplyLoopLayout(); };
+        _modeStock.CheckedChanged += (_, _) => UpdateStepVisibility();
+        _outSell.CheckedChanged += (_, _) => { UpdateStepVisibility(); };
         _byPlayers.CheckedChanged += (_, _) => OnBuyByChanged();
         _cnt.ValueChanged += (_, _) => UpdateQtyNote();
         for (int l = 5; l <= MaxLevel; l++) if (l >= 0) { int lv = l; _tgt[lv].CheckedChanged += (_, _) => { if (!_tgt[lv].Checked) return; if (!StockMode) SyncQty(); UpdateStepVisibility(); }; }
@@ -581,7 +583,7 @@ public sealed class UpgradeTab : UserControl
         Row(2, !loop);   // "Mua theo"
         Row(3, !loop);   // quantity
         bool sell = _outSell.Checked;
-        Row(6, loop);
+        Row(6, true);            // after the merges: keep / sell (one-shot) or trade / sell (loop)
         Row(7, loop && !sell);   // trade threshold
         Row(8, false);           // TODO: auto-collect of the money of sold cards (hidden for now; AutoCollect stays off)
         Row(9, loop);
@@ -590,7 +592,11 @@ public sealed class UpgradeTab : UserControl
     private void UpdateStepVisibility()
     {
         for (int i = 1; i < MaxLevel; i++) _steps[i].Visible = i + 1 <= TargetLevel;
-        _steps[MaxLevel].Visible = _runLoop.Checked && !StockMode;
+        bool loopNow = _runLoop.Checked && !StockMode;
+        _outLabel.Text = loopNow ? "Khi ép đủ mức" : "Khi ép xong";
+        _outTrade.Text = loopNow ? "Giao dịch" : "Giữ thẻ";
+        _steps[MaxLevel].Text = _outSell.Checked ? "Bán" : "Giao dịch";
+        _steps[MaxLevel].Visible = loopNow || (_outSell.Checked && !loopNow);
         ApplyLoopLayout();
     }
 
@@ -625,7 +631,7 @@ public sealed class UpgradeTab : UserControl
         double pace = PaceFactor[_pace.SelectedIndex < 0 ? 1 : _pace.SelectedIndex];
         bool loopMode = _runLoop.Checked && !StockMode;
         var plan = new UpgradePlan(spid, name, StockMode || loopMode ? 0 : BuyQty, StockMode ? 0 : (long)_maxPrice.Value,
-            TargetLevel, Rules, StockMode, pace);
+            TargetLevel, Rules, StockMode, pace, SellAfter: !_runLoop.Checked && _outSell.Checked);
         if (_runLoop.Checked && !StockMode) CycleRequested?.Invoke(plan, new CycleOptions(TradeMin: (long)_tradeMin.Value, StopBelowEp: (long)_stopBelow.Value, SellMode: _outSell.Checked, AutoCollect: false /* TODO: _collectAuto.Checked once auto-collect is switched on */));
         else RunRequested?.Invoke(plan);
     }

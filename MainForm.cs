@@ -571,13 +571,25 @@ public sealed class MainForm : Form
         if (_upCts != null) return;
         plan = await WithCeilingAsync(plan);
 
+        string sellNote = "";
+        if (plan.SellAfter)
+        {
+            try
+            {
+                var sp = await _api.GetSellPriceAsync(plan.Spid, plan.Target);
+                sellNote = sp != null
+                    ? $"\n\nSAU KHI ÉP XONG: các thẻ +{plan.Target} vừa ép ra được đăng bán NGAY lên thị trường chuyển nhượng ở giá cao nhất game cho phép ({sp.Upper:N0} EP/thẻ), phí đăng {sp.Fee:N0}/thẻ, game giữ 20% khi bán xong. Tiền bán được bạn tự nhận trong game."
+                    : "\n\nSAU KHI ÉP XONG: sẽ đăng bán các thẻ vừa ép ra ở giá cao nhất (chưa đọc được khung giá).";
+            }
+            catch (Exception ex) { sellNote = "\n\nSAU KHI ÉP XONG: sẽ đăng bán (không đọc được khung giá: " + ex.Message + ")."; }
+        }
         var cost = plan.MaxPrice > 0 ? $"tối đa {plan.Quantity * plan.MaxPrice:N0} EP (giá trần {plan.MaxPrice:N0}/thẻ)" : "không giới hạn giá";
         var rules = string.Join("\n", Enumerable.Range(2, plan.Target - 1).Select(l => $"   +{l} = +{plan.Rules[l].A} và +{plan.Rules[l].B}"));
         var ask = MessageBox.Show(
             (plan.UseInventory
                 ? $"Ép thẻ có sẵn trong kho của {plan.Name} (SPID {plan.Spid}) đến +{plan.Target}, không mua thêm." + "\n"
                 : $"Mua {plan.Quantity} thẻ +1 của {plan.Name} (SPID {plan.Spid}), rồi gom mọi thẻ hợp lệ của cầu thủ này trong kho (ngoài đội hình) và ép đến +{plan.Target}." + "\n") +
-            (plan.UseInventory ? "Không mua thẻ mới." : $"Tiền mua: {cost}.") + $" Cộng thêm phí ép theo server.\n\nRule:\n{rules}\n\nTiếp tục? Thao tác này tiêu tốn EP thật.",
+            (plan.UseInventory ? "Không mua thẻ mới." : $"Tiền mua: {cost}.") + $" Cộng thêm phí ép theo server.\n\nRule:\n{rules}{sellNote}\n\nTiếp tục? Thao tác này tiêu tốn EP thật.",
             "Xác nhận chạy quy trình", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
         if (ask != DialogResult.Yes) return;
 
@@ -588,7 +600,13 @@ public sealed class MainForm : Form
         try
         {
             var runner = new UpgradeRunner(_api, Log, _upgrade.SetStepState, _upgrade.SetProgress);
-            await runner.RunAsync(plan, _upCts.Token);
+            bool ok = await runner.RunAsync(plan, _upCts.Token);
+            if (ok && plan.SellAfter)
+            {
+                var sold = await MarketSeller.SellAsync(_api, plan, runner.ProducedTargetIds, Log, _upgrade.SetStepState, _upCts.Token);
+                Log($"[Bán] KẾT THÚC: đã đăng bán {sold.Listed} thẻ +{plan.Target} (tổng giá {sold.ListedValue:N0} EP, phí đăng {sold.Fees:N0})." +
+                    (sold.Problem != null ? " Dừng vì: " + sold.Problem : "") + (sold.Listed > 0 ? " Tiền bán được hãy nhận trong game khi có người mua." : ""));
+            }
         }
         catch (OperationCanceledException) { Log("[Ép thẻ] Đã dừng theo yêu cầu."); _upgrade.SetProgress(0, 1, "Đã dừng."); }
         catch (Exception ex) { Log("[Ép thẻ] LỖI: " + ex.Message); _upgrade.SetProgress(0, 1, "Lỗi: " + ex.Message); }

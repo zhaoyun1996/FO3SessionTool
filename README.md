@@ -149,7 +149,7 @@ Nếu báo chưa có phiên hoặc phiên hết hạn: chạy lại bước 1 v�
 **Ép thẻ tự động**
 1. Chọn cầu thủ (gõ tên và tìm, hoặc áp dụng từ tab Tìm kiếm).
 2. Chọn mức đích (+5 đến +10) và rule nguyên liệu cho từng mức.
-3. Nguồn thẻ: *Mua mới* (theo số thẻ +1 hoặc theo số cầu thủ mong muốn) hoặc *Thẻ trong kho*. Giá mua tối đa mỗi thẻ luôn là giá trần của game (`upper` của `/transfer/price`), không cần nhập. Chọn tốc độ.
+3. Nguồn thẻ: *Mua mới* (theo số thẻ +1 hoặc theo số cầu thủ mong muốn) hoặc *Thẻ trong kho*. Giá mua tối đa mỗi thẻ luôn là giá trần của game (`upper` của `/transfer/price`), không cần nhập. Chọn tốc độ. Ô *Khi ép xong* (chế độ *Một lần*): *Giữ thẻ* hoặc *Bán thị trường* (đăng bán các thẻ vừa ép lên đúng mức đích ở giá cao nhất game cho phép; thẻ đích có sẵn từ trước không bị bán; tiền bán được nhận trong game).
 4. Bấm **Thực hiện**. Với *Mua mới*, tool mua thẻ +1, rồi quét các thẻ hợp lệ trong kho, rồi ép theo rule.
 
 **Kho cầu thủ**: chỉ liệt kê thẻ chưa đăng ký. Tick thẻ để giao dịch; tổng giá trị đã chọn không được vượt 1 tỷ EP.
