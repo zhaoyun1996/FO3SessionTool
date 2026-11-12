@@ -216,3 +216,9 @@ Tool chèn thời gian chờ ngẫu nhiên giữa các thao tác (ví dụ 0,8 �
 - `GET /transfer/my/offer/list` → `{"offerexpireoffset":86400000,"offers":[…]}`: danh sách đang bán; chào bán hết hạn sau 24 giờ (`offerexpireoffset`).
 - Tham chiếu: `GET /transfer/search/{spid}` (rao hiện tại, `[]` nếu chưa ai bán), `GET /transfer/top/50`.
 - Chưa bắt được: lúc thẻ bán xong (tiền nhận, phí `completefee`) và cách hủy lệnh bán.
+
+### Nhận tiền khi thẻ bán xong [capture 2026-11-12]
+
+- `POST /transfer/my/offer/completed/{offerId}` body `{"_method":"DELETE"}` (`offerId` = `_id` của lệnh trong `/transfer/my/offer/list`, không phải id thẻ) → `{"result":true,"ep":15280000,"resources":[{"uri":"/coach/me","body":{…}}]}`. `ep` là số EP nhận được = giá bán trừ `completefee` (20%): 19.100.000 − 3.820.000 = 15.280.000. `resources` mang số dư mới.
+- Game biết thẻ bán xong qua thông báo đẩy trên cổng TCP 28003 (không phải REST). Tool không đọc cổng này mà hỏi lại `/transfer/my/offer/list`.
+- Chưa bắt được: giá trị `status` của lệnh đã bán (tool giả định `"completed"`; trạng thái lạ chỉ được ghi vào nhật ký, không tự nhận) và của lệnh hết hạn.

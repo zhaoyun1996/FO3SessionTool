@@ -39,6 +39,12 @@ public sealed class UpgradeTab : UserControl
     private readonly DarkRadio _modeStock = new() { Text = "Thẻ trong kho", Margin = new Padding(3, 5, 3, 5) };
     private readonly DarkRadio _runOnce = new() { Text = "Một lần", Checked = true, Margin = new Padding(3, 5, 14, 5) };
     private readonly DarkRadio _runLoop = new() { Text = "Xoay vòng", Margin = new Padding(3, 5, 3, 5) };
+    private readonly DarkRadio _outTrade = new() { Text = "Giao dịch", Checked = true };
+    private readonly DarkRadio _outSell = new() { Text = "Bán thị trường", Margin = new Padding(3, 5, 3, 5) };
+    private readonly DarkRadio _collectAuto = new() { Text = "Tự động", Checked = true };
+    private readonly DarkRadio _collectManual = new() { Text = "Thủ công", Margin = new Padding(3, 5, 3, 5) };
+    private readonly Label _outLabel = new() { Text = "Khi ép đủ mức", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(3, 0, 8, 0), Visible = false };
+    private readonly Label _collectLabel = new() { Text = "Nhận tiền bán", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(3, 0, 8, 0), Visible = false };
     private readonly DarkNumber _tradeMin = new() { Minimum = 1, Maximum = 1_000_000_000, Value = 900_000_000, ThousandsSeparator = true, Increment = 10_000_000, Anchor = AnchorStyles.Left, Width = 160 };
     private readonly DarkNumber _stopBelow = new() { Minimum = 0, Maximum = 1_000_000_000_000M, Value = 0, ThousandsSeparator = true, Increment = 100_000_000, Anchor = AnchorStyles.Left, Width = 160 };
     private readonly Label _stopBelowLabel = new() { Text = "Dừng khi EP dưới", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(3, 0, 8, 0), Visible = false };
@@ -114,6 +120,7 @@ public sealed class UpgradeTab : UserControl
         _results.DrawItem += DrawResultItem;
         _modeStock.CheckedChanged += (_, _) => OnModeChanged();
         _runLoop.CheckedChanged += (_, _) => UpdateStepVisibility();
+        _outSell.CheckedChanged += (_, _) => { _steps[MaxLevel].Text = _outSell.Checked ? "Bán" : "Giao dịch"; ApplyLoopLayout(); };
         _byPlayers.CheckedChanged += (_, _) => OnBuyByChanged();
         _cnt.ValueChanged += (_, _) => UpdateQtyNote();
         for (int l = 5; l <= MaxLevel; l++) if (l >= 0) { int lv = l; _tgt[lv].CheckedChanged += (_, _) => { if (!_tgt[lv].Checked) return; if (!StockMode) SyncQty(); UpdateStepVisibility(); }; }
@@ -160,11 +167,11 @@ public sealed class UpgradeTab : UserControl
     private Control BuildBuyBox()
     {
         var box = new DarkGroup { Text = "2. Nguồn thẻ", Dock = DockStyle.Fill };
-        var t = Grid(2, 9);
+        var t = Grid(2, 11);
         _buyGrid = t;
         t.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120));
         t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        for (int i = 0; i < 8; i++) t.RowStyles.Add(new RowStyle(SizeType.Absolute, Theme.RowH));
+        for (int i = 0; i < 10; i++) t.RowStyles.Add(new RowStyle(SizeType.Absolute, Theme.RowH));
         t.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
         // first radio of each pair gets the same width so the second column lines up across the rows
@@ -198,12 +205,26 @@ public sealed class UpgradeTab : UserControl
         how.Controls.Add(_runOnce);
         how.Controls.Add(_runLoop);
         t.Controls.Add(how, 1, 1);
-        t.Controls.Add(_tradeMinLabel, 0, 6);
+        t.Controls.Add(_outLabel, 0, 6);
+        foreach (var r in new[] { _outTrade, _collectAuto }) { r.AutoSize = false; r.Width = 92; r.Margin = new Padding(3, 5, 0, 5); }
+        var outRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = Padding.Empty, Anchor = AnchorStyles.Left };
+        outRow.Controls.Add(_outTrade);
+        outRow.Controls.Add(_outSell);
+        t.Controls.Add(outRow, 1, 6);
+        t.Controls.Add(_tradeMinLabel, 0, 7);
         _tradeMin.Margin = new Padding(3, 0, 3, 0);
-        t.Controls.Add(_tradeMin, 1, 6);
-        t.Controls.Add(_stopBelowLabel, 0, 7);
+        t.Controls.Add(_tradeMin, 1, 7);
+        t.Controls.Add(_collectLabel, 0, 8);
+        var colRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = Padding.Empty, Anchor = AnchorStyles.Left };
+        colRow.Controls.Add(_collectAuto);
+        colRow.Controls.Add(_collectManual);
+        t.Controls.Add(colRow, 1, 8);
+        t.Controls.Add(_stopBelowLabel, 0, 9);
         _stopBelow.Margin = new Padding(3, 0, 3, 0);
-        t.Controls.Add(_stopBelow, 1, 7);
+        t.Controls.Add(_stopBelow, 1, 9);
+        _tip.SetToolTip(_outSell, "Thẻ vừa ép lên đúng mức đích được đăng bán ngay trên thị trường chuyển nhượng ở giá CAO NHẤT game cho phép (không giao dịch). Phí đăng 1% khi đăng, game giữ 20% khi bán xong.");
+        _tip.SetToolTip(_collectManual, "Tool không nhận tiền: bạn tự nhận trong game (mục lệnh bán). Tiền chưa nhận thì chưa dùng được để mua tiếp.");
+        _tip.SetToolTip(_collectAuto, "Thẻ bán xong thì tool tự bấm nhận tiền. Khi còn lệnh chờ người mua, tool không dừng dù EP đã hết.");
         _tip.SetToolTip(_stopBelow, "Không mua thêm nếu số EP còn lại sau khi mua sẽ dưới mức này; khi không còn gì ép/đổi được thì dừng. 0 = không đặt mức.");
         _tip.SetToolTip(_tradeMin, "Khi tổng giá trị các thẻ đích chưa đăng ký đạt mức này thì đổi hết (tối đa 1 tỷ EP mỗi lần giao dịch).");
         _tip.SetToolTip(_runLoop, "Xoay vòng: mua → ép → giao dịch. Mua và ép liên tục; khi tổng giá trị thẻ đích đạt 900 triệu - 1 tỷ EP thì đổi hết (chọn phương án lớn nhất). Lặp đến khi hết EP, lỗ 2 vòng liên tiếp hoặc bấm Dừng.");
@@ -540,7 +561,7 @@ public sealed class UpgradeTab : UserControl
         _tip.SetToolTip(_btnRun, _loggedIn ? "Lấy đủ thẻ (mua hoặc từ kho) rồi ép theo rule" : "Hãy đăng nhập trước");
         foreach (Control c in new Control[] { _name, _btnFind, _results, _modeBuy, _modeStock, _pace }) c.Enabled = !_running;
         _runOnce.Enabled = _runLoop.Enabled = !_running && !StockMode;
-        _tradeMin.Enabled = _stopBelow.Enabled = !_running;
+        _tradeMin.Enabled = _stopBelow.Enabled = _outTrade.Enabled = _outSell.Enabled = _collectAuto.Enabled = _collectManual.Enabled = !_running;
         foreach (var r in _tgt) if (r != null) r.Enabled = !_running;
         _qty.Enabled = _cnt.Enabled = !_running && !StockMode;
         _byCards.Enabled = _byPlayers.Enabled = !_running && !StockMode;
@@ -560,8 +581,11 @@ public sealed class UpgradeTab : UserControl
         }
         Row(2, !loop);   // "Mua theo"
         Row(3, !loop);   // quantity
+        bool sell = _outSell.Checked;
         Row(6, loop);
-        Row(7, loop);
+        Row(7, loop && !sell);   // trade threshold
+        Row(8, loop && sell);    // money collection
+        Row(9, loop);
     }
 
     private void UpdateStepVisibility()
@@ -603,7 +627,7 @@ public sealed class UpgradeTab : UserControl
         bool loopMode = _runLoop.Checked && !StockMode;
         var plan = new UpgradePlan(spid, name, StockMode || loopMode ? 0 : BuyQty, StockMode ? 0 : (long)_maxPrice.Value,
             TargetLevel, Rules, StockMode, pace);
-        if (_runLoop.Checked && !StockMode) CycleRequested?.Invoke(plan, new CycleOptions(TradeMin: (long)_tradeMin.Value, StopBelowEp: (long)_stopBelow.Value));
+        if (_runLoop.Checked && !StockMode) CycleRequested?.Invoke(plan, new CycleOptions(TradeMin: (long)_tradeMin.Value, StopBelowEp: (long)_stopBelow.Value, SellMode: _outSell.Checked, AutoCollect: _collectAuto.Checked));
         else RunRequested?.Invoke(plan);
     }
 }

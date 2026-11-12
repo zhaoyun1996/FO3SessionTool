@@ -144,6 +144,88 @@ public sealed class GameApi
         return (ok && resp.IsSuccessStatusCode, resp.IsSuccessStatusCode ? text : $"HTTP {(int)resp.StatusCode}: {text}");
     }
 
+    // ---- sell on the transfer market (endpoints observed in the game capture, 2026-11-12) ----------
+
+    /// <summary>Allowed price window for listing a card: Upper is the highest price the game accepts. Fee is the listing fee.</summary>
+    public sealed record SellPrice(long Default, long Lower, long Upper, long Fee);
+
+    /// <summary>GET /transfer/price/{spid}/{grade}.</summary>
+    public async Task<SellPrice?> GetSellPriceAsync(long spid, int grade, CancellationToken ct = default)
+    {
+        var text = await GetAsync($"/transfer/price/{spid}/{grade}", ct);
+        try
+        {
+            var n = JsonNode.Parse(text);
+            long upper = n?["upper"]?.GetValue<long>() ?? 0;
+            if (upper <= 0) return null;
+            return new SellPrice(n?["default"]?.GetValue<long>() ?? 0, n?["lower"]?.GetValue<long>() ?? 0, upper, n?["registrationFee"]?.GetValue<long>() ?? 0);
+        }
+        catch { return null; }
+    }
+
+    /// <summary>A listing of ours on the market. Status is "waiting" while unsold; CompleteFee is what the game keeps once it sells.</summary>
+    public sealed record MarketOffer(string OfferId, string CardId, long Spid, int Grade, long Price, string Status, long CompleteFee);
+
+    /// <summary>POST /transfer/offer {"price","playerobjectid"}: lists the card. The card leaves our hands until it sells or expires.</summary>
+    public async Task<(bool Ok, MarketOffer? Offer, string Raw)> SellAsync(string cardId, long price, CancellationToken ct = default)
+    {
+        using var content = new StringContent(new JsonObject { ["price"] = price, ["playerobjectid"] = cardId }.ToJsonString(), Encoding.UTF8, "application/json");
+        using var resp = await _http.PostAsync($"{_base}/transfer/offer", content, ct);
+        var text = await resp.Content.ReadAsStringAsync(ct);
+        bool ok = false; MarketOffer? mine = null;
+        try
+        {
+            var n = JsonNode.Parse(text);
+            ok = n?["result"]?.GetValue<bool>() == true;
+            if (ok) { ApplyMoney(text); mine = ParseOffers(text).FirstOrDefault(o => o.CardId == cardId); }
+        }
+        catch { }
+        return (ok && resp.IsSuccessStatusCode, mine, resp.IsSuccessStatusCode ? text : $"HTTP {(int)resp.StatusCode}: {text}");
+    }
+
+    /// <summary>GET /transfer/my/offer/list.</summary>
+    public async Task<List<MarketOffer>> GetOffersAsync(CancellationToken ct = default)
+        => ParseOffers(await GetAsync("/transfer/my/offer/list", ct));
+
+    /// <summary>Offers from either the list answer or the "resources" of an offer answer.</summary>
+    public static List<MarketOffer> ParseOffers(string text)
+    {
+        var list = new List<MarketOffer>();
+        var root = JsonNode.Parse(text);
+        JsonNode? offers = root?["offers"];
+        if (offers == null)
+            foreach (var r in root?["resources"]?.AsArray() ?? new JsonArray())
+                if (r?["uri"]?.GetValue<string>() == "/transfer/my/offer/list") { offers = r["body"]?["offers"]; break; }
+        foreach (var o in offers?.AsArray() ?? new JsonArray())
+        {
+            var offerId = o?["_id"]?.GetValue<string>();
+            if (offerId == null) continue;
+            list.Add(new MarketOffer(offerId, o!["playerobjectid"]?.GetValue<string>() ?? o["id"]?.GetValue<string>() ?? "",
+                o["spid"]?.GetValue<long>() ?? 0, o["grade"]?.GetValue<int>() ?? 0, o["price"]?.GetValue<long>() ?? 0,
+                o["status"]?.GetValue<string>() ?? "", o["completefee"]?["base"]?.GetValue<long>() ?? 0));
+        }
+        return list;
+    }
+
+    /// <summary>POST /transfer/my/offer/completed/{offerId} {"_method":"DELETE"}: receives the money of a sold card. Received = EP paid out.</summary>
+    public async Task<(bool Ok, long Received, string Raw)> CollectOfferAsync(string offerId, CancellationToken ct = default)
+    {
+        using var content = new ByteArrayContent(Encoding.UTF8.GetBytes("{\"_method\":\"DELETE\"}"));
+        content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+        using var resp = await _http.PostAsync($"{_base}/transfer/my/offer/completed/{offerId}", content, ct);
+        var text = await resp.Content.ReadAsStringAsync(ct);
+        bool ok = false; long got = 0;
+        try
+        {
+            var n = JsonNode.Parse(text);
+            ok = n?["result"]?.GetValue<bool>() == true;
+            got = n?["ep"]?.GetValue<long>() ?? 0;
+            if (ok) ApplyMoney(text);
+        }
+        catch { }
+        return (ok && resp.IsSuccessStatusCode, got, resp.IsSuccessStatusCode ? text : $"HTTP {(int)resp.StatusCode}: {text}");
+    }
+
     // ---- buy / enhance (endpoints observed in the game capture) ----------
 
     public sealed record Wallet(long Ep, long Es);
