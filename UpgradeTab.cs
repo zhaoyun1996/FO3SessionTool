@@ -194,9 +194,8 @@ public sealed class UpgradeTab : UserControl
         qtyRow.Controls.Add(_cnt);
         qtyRow.Controls.Add(_qtyNote);
         t.Controls.Add(qtyRow, 1, 3);
-        t.Controls.Add(Lbl("Giá tối đa/thẻ"), 0, 4);
-        _maxPrice.Anchor = AnchorStyles.Left; _maxPrice.Width = 130;
-        t.Controls.Add(_maxPrice, 1, 4);
+        // no "max price per card" input: the ceiling is always the game's own upper price (resolved in MainForm when a run starts)
+        t.RowStyles[4] = new RowStyle(SizeType.Absolute, 0);
         t.Controls.Add(Lbl("Tốc độ"), 0, 5);
         _pace.Anchor = AnchorStyles.Left; _pace.Width = 190;
         t.Controls.Add(_pace, 1, 5);

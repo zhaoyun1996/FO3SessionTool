@@ -552,12 +552,26 @@ public sealed class MainForm : Form
     // ---- tab "Ép thẻ tự động" -------------------------------------------
 
     /// <summary>Runs the whole flow (buy N, then merge up to the target) with progress + log; Dừng cancels it.</summary>
+    /// <summary>The price of a +1 card is never above the game's upper limit for it (/transfer/price): that ceiling is the implicit max price per card.</summary>
+    private async Task<UpgradePlan> WithCeilingAsync(UpgradePlan plan)
+    {
+        if (plan.UseInventory || _api == null) return plan;
+        try
+        {
+            var p = await _api.GetSellPriceAsync(plan.Spid, 1);
+            if (p != null) { Log($"[Ép thẻ] Giá trần của thẻ +1: {p.Upper:N0} EP (mua không vượt mức này)."); return plan with { MaxPrice = p.Upper }; }
+        }
+        catch (Exception ex) { Log("[Ép thẻ] Không đọc được giá trần: " + ex.Message + " (không giới hạn giá)."); }
+        return plan;
+    }
+
     private async void OnUpgradeRun(UpgradePlan plan)
     {
         if (_api == null) { Warn("Hãy đăng nhập trước."); return; }
         if (_upCts != null) return;
+        plan = await WithCeilingAsync(plan);
 
-        var cost = plan.MaxPrice > 0 ? $"tối đa {plan.Quantity * plan.MaxPrice:N0} EP" : "không giới hạn giá";
+        var cost = plan.MaxPrice > 0 ? $"tối đa {plan.Quantity * plan.MaxPrice:N0} EP (giá trần {plan.MaxPrice:N0}/thẻ)" : "không giới hạn giá";
         var rules = string.Join("\n", Enumerable.Range(2, plan.Target - 1).Select(l => $"   +{l} = +{plan.Rules[l].A} và +{plan.Rules[l].B}"));
         var ask = MessageBox.Show(
             (plan.UseInventory
@@ -591,12 +605,13 @@ public sealed class MainForm : Form
     {
         if (_api == null) { Warn("Hãy đăng nhập trước."); return; }
         if (_upCts != null) return;
+        plan = await WithCeilingAsync(plan);
 
         var nl = Environment.NewLine;
         var rules = string.Join(nl, Enumerable.Range(2, plan.Target - 1).Select(l => $"   +{l} = +{plan.Rules[l].A} và +{plan.Rules[l].B}"));
         var ask = MessageBox.Show(
             $"XOAY VÒNG TỰ ĐỘNG cho {plan.Name} (SPID {plan.Spid}), ba việc chạy SONG SONG:" + nl + nl +
-            $"• MUA thẻ +1 liên tục, từng thẻ một (giá tối đa/thẻ: {(plan.MaxPrice > 0 ? plan.MaxPrice.ToString("N0") + " EP" : "không giới hạn")}), chỉ mua khi dây chuyền còn chỗ." + nl +
+            $"• MUA thẻ +1 liên tục, từng thẻ một (giá trần: {(plan.MaxPrice > 0 ? plan.MaxPrice.ToString("N0") + " EP/thẻ" : "không giới hạn")}), chỉ mua khi dây chuyền còn chỗ." + nl +
             $"• ÉP ngay khi có đủ cặp thẻ theo rule, đến +{plan.Target}." + nl +
             (opt.SellMode
                 ? $"• BÁN: mỗi thẻ +{plan.Target} ép xong được đăng bán NGAY lên thị trường chuyển nhượng ở giá CAO NHẤT game cho phép. Phí đăng 1% khi đăng, game giữ 20% khi bán xong." + nl +
