@@ -57,6 +57,30 @@ public sealed class UpgradeRunner
     }
 
     /// <summary>Returns true when every step finished. Throws OperationCanceledException when stopped.</summary>
+    /// <summary>Asked when a merge has a success probability under 100%: (target level, probability) -> true to accept the risk.
+    /// Accepting a level covers every merge to that level for the rest of the run. Without a callback such merges are refused.</summary>
+    public Func<int, int, Task<bool>>? ConfirmRisk { get; set; }
+    private readonly HashSet<int> _riskAccepted = new();
+    private readonly SemaphoreSlim _riskAsk = new(1, 1);
+    /// <summary>false after a merge the server applied but did not succeed (cards may be lost or lowered): callers re-read the storage.</summary>
+    internal bool LastEnhanceSucceeded { get; private set; } = true;
+
+    internal async Task<bool> AcceptRiskAsync(int lvl, int probability)
+    {
+        if (probability >= 100) return true;
+        await _riskAsk.WaitAsync();
+        try
+        {
+            if (_riskAccepted.Contains(lvl)) return true;
+            if (ConfirmRisk == null) return false;
+            if (!await ConfirmRisk(lvl, probability)) return false;
+            _riskAccepted.Add(lvl);
+            _log($"[Ép thẻ] Bạn đã chấp nhận rủi ro khi ép lên +{lvl} (xác suất {probability}%).");
+            return true;
+        }
+        finally { _riskAsk.Release(); }
+    }
+
     /// <summary>Cards that reached the target level during the last run (older target-level cards are not included).</summary>
     public List<string> ProducedTargetIds { get; private set; } = new();
 
@@ -177,18 +201,29 @@ public sealed class UpgradeRunner
                     pv = await _api.EnhancePreviewAsync(main, mat, ct);
                 }
                 if (pv.Grade != lvl) return Fail(step, $"Xem trước ép cho ra +{pv.Grade}, mong đợi +{lvl}. Dừng.");
-                if (pv.Probability < 100)
-                    return Fail(step, $"Xác suất ép +{lvl} chỉ {pv.Probability}% (<100%), dừng để không mất thẻ. ({GameApi.Trim(pv.Raw)})");
+                if (pv.Probability < 100 && !await AcceptRiskAsync(lvl, pv.Probability))
+                    return Fail(step, $"Xác suất ép +{lvl} chỉ {pv.Probability}% (<100%) và bạn không chấp nhận rủi ro, dừng. ({GameApi.Trim(pv.Raw)})");
+                if (pv.Probability < 100) _log($"[Ép thẻ] Cảnh báo: xác suất ép +{lvl} chỉ {pv.Probability}%.");
 
                 _log($"[Ép thẻ] Xem trước OK: ra +{pv.Grade}, xác suất {pv.Probability}%, phí {pv.EnhancePay:N0} EP. Chuẩn bị bấm ép...");
                 await Pacing.Wait(2.0, 4.5, pace, ct);   // read the preview, then confirm
                 if (!await EnhanceWithRecoveryAsync(main, mat, lvl, step, pace, ct)) return false;
 
                 if (!_api.LastHadMoney) _api.Spend(pv.EnhancePay);
+                fees += pv.EnhancePay;
+                if (!LastEnhanceSucceeded)
+                {
+                    // the server applied the merge and it failed: the storage tells what is left
+                    _log($"[Ép thẻ] ÉP +{lvl} KHÔNG THÀNH CÔNG (xác suất {pv.Probability}%), phí {pv.EnhancePay:N0} EP đã mất. Đọc lại kho để biết thẻ còn lại...");
+                    var inv2 = await _api.GetInventoryAsync(ct);
+                    foreach (var l in pool.Values) l.Clear();
+                    foreach (var c in inv2.Where(c => c.Spid == plan.Spid && !c.InSquad && c.Grade >= 1 && c.Grade <= plan.Target)) pool[c.Grade].Add(c.Id);
+                    await Pacing.Wait(3, 7, pace, ct);
+                    continue;
+                }
                 Remove(pool, main); Remove(pool, mat);
                 pool[lvl].Add(main);
                 done++;
-                fees += pv.EnhancePay;
                 _progress(done, Math.Max(planned[lvl], done), $"Ép +{lvl}: {done}/{planned[lvl]}");
                 _log($"[Ép thẻ] Ép +{lvl} ({done}/{planned[lvl]}): phí {pv.EnhancePay:N0} EP");
                 await Pacing.Wait(3, 7, pace, ct);
@@ -214,13 +249,15 @@ public sealed class UpgradeRunner
     internal async Task<bool> EnhanceWithRecoveryAsync(string main, string mat, int lvl, int step, double pace, CancellationToken ct)
     {
         string lastRaw = "";
+        LastEnhanceSucceeded = true;
         for (int attempt = 1; attempt <= MaxEnhanceTries; attempt++)
         {
             try
             {
                 _log($"[Ép thẻ] Đang gửi lệnh ép +{lvl} (lần {attempt}/{MaxEnhanceTries})...");
                 var r = await _api.EnhanceAsync(main, mat, ct);
-                if (r.Ok && r.Success && r.ResultGrade == lvl) return true;
+                if (r.Ok && r.Success && r.ResultGrade == lvl) { LastEnhanceSucceeded = true; return true; }
+                if (r.Ok && !r.Success) { LastEnhanceSucceeded = false; return true; }   // applied, but it failed: never repeat it blindly
                 lastRaw = r.Raw;
             }
             catch (OperationCanceledException) { throw; }

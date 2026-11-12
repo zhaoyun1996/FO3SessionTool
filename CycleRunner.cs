@@ -39,6 +39,8 @@ public sealed class CycleRunner
     private readonly Action _resetSteps;
     private readonly Action<RoundStat>? _round;
     private readonly UpgradeRunner _inner;
+    /// <summary>Asked (target level, probability) when a merge is under 100%; true = accept the risk for that level for this run.</summary>
+    public Func<int, int, Task<bool>>? ConfirmRisk { get => _inner.ConfirmRisk; set => _inner.ConfirmRisk = value; }
 
     public CycleRunner(GameApi api, Action<string> log, Action<int, StepState> step, Action<int, int, string> progress, Action resetSteps, Action<RoundStat>? round = null)
     {
@@ -359,7 +361,7 @@ public sealed class CycleRunner
         var job = TakeMerge(plan);
         if (job == null) { _merging = false; await Task.Delay(1000, tok); return; }
         _merging = true;
-        bool done = false;
+        bool done = false, resolved = false;
         try
         {
             int lvl = job.Level, step = lvl - 1;
@@ -374,13 +376,37 @@ public sealed class CycleRunner
                 pv = await _api.EnhancePreviewAsync(main, mat, tok);
             }
             if (pv.Grade != lvl) { _step(step, StepState.Error); Stop($"Xem trước ép cho ra +{pv.Grade}, mong đợi +{lvl}."); return; }
-            if (pv.Probability < 100) { _step(step, StepState.Error); Stop($"Xác suất ép +{lvl} chỉ {pv.Probability}% (<100%), dừng để không mất thẻ."); return; }
+            if (pv.Probability < 100 && !await _inner.AcceptRiskAsync(lvl, pv.Probability))
+            { _step(step, StepState.Error); Stop($"Xác suất ép +{lvl} chỉ {pv.Probability}% (<100%) và bạn không chấp nhận rủi ro."); return; }
+            if (pv.Probability < 100) _log($"[Xoay vòng/Ép] Cảnh báo: xác suất ép +{lvl} chỉ {pv.Probability}%.");
             _lastFee = pv.EnhancePay;
             await Pacing.Wait(2.0, 4.5, pace, tok);
             if (!await _inner.EnhanceWithRecoveryAsync(main, mat, lvl, step, pace, tok)) { Stop($"Ép +{lvl} thất bại (xem nhật ký phía trên)."); return; }
             if (!_api.LastHadMoney) _api.Spend(pv.EnhancePay);
             Interlocked.Add(ref _spent, pv.EnhancePay);
             job = job with { Main = main, Mat = mat };
+            if (!_inner.LastEnhanceSucceeded)
+            {
+                // the merge was applied and failed: the storage tells which of the two cards is left (and at which level)
+                _log($"[Xoay vòng/Ép] ÉP +{lvl} KHÔNG THÀNH CÔNG (xác suất {pv.Probability}%), phí {pv.EnhancePay:N0} EP đã mất. Đọc lại kho...");
+                var inv2 = await _api.GetInventoryAsync(CancellationToken.None);
+                int gone = 0;
+                lock (_lock)
+                {
+                    foreach (var id in new[] { main, mat })
+                    {
+                        var c = inv2.FirstOrDefault(x => x.Id == id);
+                        if (c != null && c.Spid == plan.Spid && c.Group == GameApi.GroupNone && c.Grade >= 1 && c.Grade <= plan.Target) _pool[c.Grade].Add(id);
+                        else gone++;
+                    }
+                    _inFlight -= job.Eq;
+                }
+                Interlocked.Add(ref _cardCount, -gone);
+                resolved = true;
+                Activity();
+                await Pacing.Wait(3, 7, pace, tok);
+                return;
+            }
             lock (_lock) _cardCost[main] = _cardCost.GetValueOrDefault(main) + _cardCost.GetValueOrDefault(mat) + pv.EnhancePay;
             done = true;
             _step(step, StepState.Done);
@@ -391,7 +417,7 @@ public sealed class CycleRunner
         }
         finally
         {
-            GiveBack(job, plan, done);
+            if (!resolved) GiveBack(job, plan, done);
             _merging = false;
         }
     }
