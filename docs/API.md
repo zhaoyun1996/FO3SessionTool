@@ -221,4 +221,4 @@ Tool chèn thời gian chờ ngẫu nhiên giữa các thao tác (ví dụ 0,8 �
 
 - `POST /transfer/my/offer/completed/{offerId}` body `{"_method":"DELETE"}` (`offerId` = `_id` của lệnh trong `/transfer/my/offer/list`, không phải id thẻ) → `{"result":true,"ep":15280000,"resources":[{"uri":"/coach/me","body":{…}}]}`. `ep` là số EP nhận được = giá bán trừ `completefee` (20%): 19.100.000 − 3.820.000 = 15.280.000. `resources` mang số dư mới.
 - Game biết thẻ bán xong qua thông báo đẩy trên cổng TCP 28003 (không phải REST). Tool không đọc cổng này mà hỏi lại `/transfer/my/offer/list`.
-- Chưa bắt được: giá trị `status` của lệnh đã bán (tool giả định `"completed"`; trạng thái lạ chỉ được ghi vào nhật ký, không tự nhận) và của lệnh hết hạn.
+- `status` của lệnh trong `/transfer/my/offer/list`: **`"waiting"`** khi chưa ai mua, **`"sold"`** khi đã bán (đọc từ server thật, 2 lệnh Ronaldo +5 giá 229.000.000, `completefee.base` 45.800.000). Lệnh đã bán nằm trong danh sách cho đến khi bạn nhận tiền bằng `POST /transfer/my/offer/completed/{_id}`. Chưa biết `status` của lệnh hết hạn. Tool coi `sold` (và `completed`) là nhận tiền được; trạng thái khác chỉ ghi nhật ký.

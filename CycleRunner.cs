@@ -591,7 +591,7 @@ public sealed class CycleRunner
         _pending = offers.Count(o => o.Status == "waiting");
         foreach (var o in offers.Where(o => o.Status != "waiting"))
         {
-            if (o.Status != "completed")
+            if (o.Status != "sold" && o.Status != "completed")   // "sold" is what the game reports (seen on the live server, 2026-11-12)
             {
                 if (_statusSeen.Add("status:" + o.Status))
                     _log($"[Xoay vòng/Nhận tiền] Lệnh bán SPID {o.Spid} +{o.Grade} có trạng thái lạ \"{o.Status}\", bỏ qua (chưa biết cách xử lý trạng thái này).");
