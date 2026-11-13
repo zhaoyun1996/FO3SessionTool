@@ -53,12 +53,24 @@ public sealed class TradeDialog : Form
         Theme.Apply(this);
         BackColor = Theme.Bg;
 
-        Shown += async (_, _) =>
+        // everything is requested at once (portraits from the game CDN, details from fifaaddict, the season sprite) and each card repaints as soon as
+        // a piece arrives, so the popup is usable immediately instead of waiting for the slowest download
+        var spriteTask = Task.Run(async () => { try { return await sprite(); } catch { return null; } });
+        var loads = _cards.Select(c => c.LoadAsync(_players)).ToList();
+        loads.Add(Task.Run(async () =>
         {
-            Bitmap? sp = null;
-            try { sp = await sprite(); } catch { }
-            await Task.WhenAll(_cards.Select(c => c.LoadAsync(_players, sp)));
-        };
+            var sp = await spriteTask;
+            if (sp != null) BeginInvokeSafe(() => { foreach (var c in _cards) c.SetSprite(sp); });
+        }));
+        Loaded = Task.WhenAll(loads);
+    }
+
+    /// <summary>Completes when every card has all its pieces (or gave up). The dialog does not wait for it.</summary>
+    public Task Loaded { get; private set; } = Task.CompletedTask;
+
+    private void BeginInvokeSafe(Action a)
+    {
+        try { if (!IsDisposed) { if (IsHandleCreated) BeginInvoke(a); else a(); } } catch { }
     }
 
     private void Select(int i)
@@ -91,20 +103,31 @@ public sealed class TradeDialog : Form
             Font = Theme.Body;
         }
 
-        public async Task LoadAsync(PlayerSearch players, Bitmap? sprite)
+        public void SetSprite(Bitmap? sprite) { _sprite = sprite; if (!IsDisposed) Invalidate(); }
+
+        /// <summary>Portrait and details load side by side; the card repaints after each (the portrait usually comes first).</summary>
+        public async Task LoadAsync(PlayerSearch players)
         {
-            _sprite = sprite;
+            var det = players.GetDetailCachedAsync(_o.Spid);
+            var img = players.LoadImageCachedAsync($"http://cdn.3sea.online/cdn/externalAssets/players/p{_o.Spid}.png");
+            var portraitTask = Task.Run(async () =>
+            {
+                try { _portrait = await img; } catch { }
+                if (!IsDisposed) Invalidate();
+            });
             try
             {
-                var det = players.GetDetailCachedAsync(_o.Spid);
-                var img = players.LoadImageAsync($"http://cdn.3sea.online/cdn/externalAssets/players/p{_o.Spid}.png");
                 _d = await det;
-                _portrait = await img;
-                if (_portrait == null && _d != null && _d.ImageUrl.Length > 0) _portrait = await players.LoadImageAsync(_d.ImageUrl);
                 _status = _d == null ? "Không đọc được thông tin" : "";
             }
             catch { _status = "Không đọc được thông tin"; }
             if (!IsDisposed) Invalidate();
+            await portraitTask;
+            if (_portrait == null && _d != null && _d.ImageUrl.Length > 0)
+            {
+                try { _portrait = await players.LoadImageCachedAsync(_d.ImageUrl); } catch { }
+                if (!IsDisposed) Invalidate();
+            }
         }
 
         protected override void OnPaint(PaintEventArgs e)
@@ -128,14 +151,19 @@ public sealed class TradeDialog : Form
             using (var br = new SolidBrush(Theme.Surface2)) g.FillRectangle(br, head);
             using (var pen = new Pen(_selected ? Theme.Gold : Color.FromArgb(120, 100, 70))) g.DrawLine(pen, head.X, head.Y, head.Right, head.Y);
             TextRenderer.DrawText(g, _d?.Club ?? "", Theme.Body, head, Theme.Text, C);
+            var pr = PaintPortrait(g, C);
             if (_d == null)
             {
-                TextRenderer.DrawText(g, _status, Theme.Body, new Rectangle(0, 60, W, 30), Theme.Dim, C);
+                TextRenderer.DrawText(g, _status, Theme.Body, new Rectangle(0, pr.Bottom + 10, W, 30), Theme.Dim, C);
                 PaintPrice(g, C);
                 return;
             }
+            PaintRest(g, C, F, pr);
+        }
 
-            // portrait
+        /// <summary>Portrait frame, "largest" tag and grade badge: shown as soon as the image is there, before the details arrive.</summary>
+        private Rectangle PaintPortrait(Graphics g, TextFormatFlags C)
+        {
             var pr = new Rectangle((W - 150) / 2, 46, 150, 120);
             using (var bg = new LinearGradientBrush(pr, Color.FromArgb(58, 52, 40), Color.FromArgb(18, 20, 26), 60f)) g.FillRectangle(bg, pr);
             if (_portrait != null)
@@ -158,6 +186,11 @@ public sealed class TradeDialog : Form
             var badge = new Rectangle(pr.Right - 30, pr.Bottom - 20, 28, 18);
             using (var bb = new SolidBrush(Color.FromArgb(200, 20, 22, 28))) g.FillRectangle(bb, badge);
             TextRenderer.DrawText(g, "+" + _o.Grade, Theme.SmallBold, badge, Theme.Text, C);
+            return pr;
+        }
+
+        private void PaintRest(Graphics g, TextFormatFlags C, TextFormatFlags F, Rectangle pr)
+        {
 
             // season icon + name, centered
             int nameW = TextRenderer.MeasureText(g, _d.Name, Theme.Bold, new Size(int.MaxValue, 0), F).Width;

@@ -158,7 +158,7 @@ Nếu báo chưa có phiên hoặc phiên hết hạn: chạy lại bước 1 v�
 3. Nguồn thẻ: *Mua mới* (theo số thẻ +1 hoặc theo số cầu thủ mong muốn) hoặc *Thẻ trong kho*. Giá mua tối đa mỗi thẻ luôn là giá trần của game (`upper` của `/transfer/price`), không cần nhập. Chọn tốc độ. Khi xác suất ép lên một mức dưới 100%, tool hiện hộp cảnh báo: chọn *Có* thì tiếp tục ép (áp dụng cho mọi lần ép lên mức đó trong lần chạy), chọn *Không* thì dừng; nếu một lần ép không thành công tool đọc lại kho để biết thẻ còn lại rồi ép tiếp. Ô *Khi ép xong* (chế độ *Một lần*): *Giữ thẻ* hoặc *Bán thị trường* (đăng bán các thẻ vừa ép lên đúng mức đích ở giá cao nhất game cho phép; thẻ đích có sẵn từ trước không bị bán), kèm ô *Nhận tiền bán* như trên.
 4. Bấm **Thực hiện**. Với *Mua mới*, tool mua thẻ +1, rồi quét các thẻ hợp lệ trong kho, rồi ép theo rule.
 
-**Kho cầu thủ**: chỉ liệt kê thẻ chưa đăng ký. Tick thẻ để giao dịch; tổng giá trị đã chọn không được vượt 1 tỷ EP.
+**Kho cầu thủ**: chỉ liệt kê thẻ chưa đăng ký. Tick thẻ để giao dịch; chọn tối đa 10 thẻ và tổng giá trị không được vượt 1 tỷ EP (quá thì có hộp cảnh báo, thẻ không được chọn). Popup chọn phương án tải ảnh và thông tin song song, có cache, thẻ hiện dần nên mở gần như ngay.
 
 **Giao dịch**: chọn *Tự chọn kết quả* hoặc *Tự động* rồi bấm **Giao dịch**. Tool xin 3 phương án; chế độ tự chọn mở popup để chọn một phương án, chế độ tự động lấy phương án có tổng (EP + giá cầu thủ) lớn nhất. Sau cùng luôn có hộp xác nhận trước khi chốt.
 

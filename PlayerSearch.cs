@@ -53,6 +53,17 @@ public sealed class PlayerSearch : IDisposable
         return Parse(html);
     }
 
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, Task<Image?>> _imageCache = new();
+
+    /// <summary>Image with an in-memory cache per url: the same portrait / sprite is downloaded once, concurrent callers share the download
+    /// (a failed download is retried next time). Cached images are shared, so callers must not dispose them.</summary>
+    public Task<Image?> LoadImageCachedAsync(string url)
+    {
+        var t = _imageCache.GetOrAdd(url, u => LoadImageAsync(u));
+        t.ContinueWith(x => { if (x.IsFaulted || x.IsCanceled || x.Result == null) _imageCache.TryRemove(url, out _); }, TaskScheduler.Default);
+        return t;
+    }
+
     public async Task<Image?> LoadImageAsync(string url, CancellationToken ct = default)
     {
         try

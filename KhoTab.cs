@@ -176,6 +176,13 @@ public sealed class KhoTab : UserControl
         if (_grid.Rows[row].Tag is not GameApi.OwnedCard c || c.Group != GameApi.GroupNone) return;
         if (!_picked.Remove(c.Id))
         {
+            if (_picked.Count >= TradeMaxCards)
+            {
+                _log($"[Giao dịch] Không chọn được: một lần giao dịch tối đa {TradeMaxCards} thẻ.");
+                MessageBox.Show(FindForm(), $"Không thể chọn thẻ này: một lần giao dịch chỉ được chọn tối đa {TradeMaxCards} cầu thủ." +
+                    Environment.NewLine + Environment.NewLine + "Hãy bỏ bớt thẻ đã chọn hoặc giao dịch theo nhiều lần.", $"Giao dịch quá {TradeMaxCards} thẻ", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
             long after = Picked.Sum(x => x.Value) + c.Value;
             if (after > TradeWarnValue)
             {
@@ -258,13 +265,14 @@ public sealed class KhoTab : UserControl
 
     /// <summary>Largest total value of the cards ticked for one trade (1 billion EP, trade3 staticvalues max_trade).</summary>
     public const long TradeWarnValue = 1_000_000_000;
+    public const int TradeMaxCards = 10;
 
     private void UpdateTradeUi()
     {
         var p = Picked;
         _pickInfo.Text = p.Count == 0
             ? "Chưa chọn thẻ nào. Nhấp vào ô Chọn hoặc nhấp đôi vào dòng để chọn."
-            : $"Đã chọn {p.Count} thẻ, tổng giá trị {p.Sum(c => c.Value):N0} EP" + (p.Sum(c => c.Value) > TradeWarnValue ? " - VƯỢT 1 TỶ" : "");
+            : $"Đã chọn {p.Count}/{TradeMaxCards} thẻ, tổng giá trị {p.Sum(c => c.Value):N0} EP" + (p.Sum(c => c.Value) > TradeWarnValue ? " - VƯỢT 1 TỶ" : "");
         _pickInfo.ForeColor = p.Count == 0 ? Theme.Dim : p.Sum(c => c.Value) > TradeWarnValue ? Theme.Warn : Theme.Text;
         _btnTrade.Enabled = _loggedIn && p.Count > 0 && TradeAvailable && !_tradeBusy;
         _tradeNote.Text = TradeAvailable ? "Phương án lớn nhất = tiền tươi + giá cầu thủ nhận về." : "";
