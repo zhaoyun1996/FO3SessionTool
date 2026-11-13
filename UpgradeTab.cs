@@ -40,8 +40,10 @@ public sealed class UpgradeTab : UserControl
     private readonly DarkRadio _modeStock = new() { Text = "Thẻ trong kho", Margin = new Padding(3, 5, 3, 5) };
     private readonly DarkRadio _runOnce = new() { Text = "Một lần", Checked = true, Margin = new Padding(3, 5, 14, 5) };
     private readonly DarkRadio _runLoop = new() { Text = "Xoay vòng", Margin = new Padding(3, 5, 3, 5) };
-    private readonly DarkRadio _outTrade = new() { Text = "Giao dịch", Checked = true };
-    private readonly DarkRadio _outSell = new() { Text = "Bán thị trường", Margin = new Padding(3, 5, 3, 5) };
+    private readonly DarkCombo _outMode = new() { DropDownStyle = ComboBoxStyle.DropDownList, Anchor = AnchorStyles.Left, Width = 190 };
+    private bool _outBusy;
+    private bool OutSell => _outMode.SelectedIndex == 1;
+    private bool OutKeep => _runLoop.Checked && !StockMode && _outMode.SelectedIndex == 2;
     private readonly DarkRadio _collectAuto = new() { Text = "Tự động", Checked = true };
     private readonly DarkRadio _collectManual = new() { Text = "Thủ công", Margin = new Padding(3, 5, 3, 5) };
     private readonly Label _outLabel = new() { Text = "Khi ép đủ mức", AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Margin = new Padding(3, 0, 8, 0), Visible = false };
@@ -122,7 +124,7 @@ public sealed class UpgradeTab : UserControl
         _modeStock.CheckedChanged += (_, _) => OnModeChanged();
         _runLoop.CheckedChanged += (_, _) => UpdateStepVisibility();
         _modeStock.CheckedChanged += (_, _) => UpdateStepVisibility();
-        _outSell.CheckedChanged += (_, _) => { UpdateStepVisibility(); };
+        _outMode.SelectedIndexChanged += (_, _) => { if (!_outBusy) UpdateStepVisibility(); };
         _byPlayers.CheckedChanged += (_, _) => OnBuyByChanged();
         _cnt.ValueChanged += (_, _) => UpdateQtyNote();
         for (int l = 5; l <= MaxLevel; l++) if (l >= 0) { int lv = l; _tgt[lv].CheckedChanged += (_, _) => { if (!_tgt[lv].Checked) return; if (!StockMode) SyncQty(); UpdateStepVisibility(); }; }
@@ -196,7 +198,8 @@ public sealed class UpgradeTab : UserControl
         t.Controls.Add(RowLbl("Cách chạy"), 0, 1);
         t.Controls.Add(Pair(_runOnce, _runLoop), 1, 1);
         t.Controls.Add(_outLabel, 0, 6);
-        t.Controls.Add(Pair(_outTrade, _outSell), 1, 6);
+        _outMode.Margin = new Padding(3, 0, 3, 0);
+        t.Controls.Add(_outMode, 1, 6);
         t.Controls.Add(_tradeMinLabel, 0, 7);
         _tradeMin.Margin = new Padding(3, 0, 3, 0);
         t.Controls.Add(_tradeMin, 1, 7);
@@ -205,7 +208,7 @@ public sealed class UpgradeTab : UserControl
         t.Controls.Add(_stopBelowLabel, 0, 9);
         _stopBelow.Margin = new Padding(3, 0, 3, 0);
         t.Controls.Add(_stopBelow, 1, 9);
-        _tip.SetToolTip(_outSell, "Thẻ vừa ép lên đúng mức đích được đăng bán ngay trên thị trường chuyển nhượng ở giá CAO NHẤT game cho phép (không giao dịch). Phí đăng 1% khi đăng, game giữ 20% khi bán xong.");
+        _tip.SetToolTip(_outMode, "Bán thị trường: thẻ vừa ép lên đúng mức đích được đăng bán ngay trên thị trường chuyển nhượng ở giá CAO NHẤT game cho phép (không giao dịch). Phí đăng 1% khi đăng, game giữ 20% khi bán xong.");
         _tip.SetToolTip(_collectManual, "Tool không nhận tiền: bạn tự nhận trong game (mục lệnh bán). Tiền chưa nhận thì chưa dùng được để mua tiếp.");
         _tip.SetToolTip(_collectAuto, "Thẻ bán xong thì tool tự bấm nhận tiền (chỉ lệnh bán của cầu thủ đang chọn). Xoay vòng: khi còn lệnh chờ người mua, tool không dừng dù EP đã hết. Một lần: đăng bán xong tool chờ tối đa 3 phút để nhận tiền.");
         _tip.SetToolTip(_stopBelow, "Không mua thêm nếu số EP còn lại sau khi mua sẽ dưới mức này; khi không còn gì ép/đổi được thì dừng. 0 = không đặt mức.");
@@ -560,7 +563,7 @@ public sealed class UpgradeTab : UserControl
         _tip.SetToolTip(_btnRun, _loggedIn ? "Lấy đủ thẻ (mua hoặc từ kho) rồi ép theo rule" : "Hãy đăng nhập trước");
         foreach (Control c in new Control[] { _name, _btnFind, _results, _modeBuy, _modeStock, _pace }) c.Enabled = !_running;
         _runOnce.Enabled = _runLoop.Enabled = !_running && !StockMode;
-        _tradeMin.Enabled = _stopBelow.Enabled = _outTrade.Enabled = _outSell.Enabled = _collectAuto.Enabled = _collectManual.Enabled = !_running;
+        _tradeMin.Enabled = _stopBelow.Enabled = _outMode.Enabled = _collectAuto.Enabled = _collectManual.Enabled = !_running;
         foreach (var r in _tgt) if (r != null) r.Enabled = !_running;
         _qty.Enabled = _cnt.Enabled = !_running && !StockMode;
         _byCards.Enabled = _byPlayers.Enabled = !_running && !StockMode;
@@ -580,9 +583,9 @@ public sealed class UpgradeTab : UserControl
         }
         Row(2, !loop);   // "Mua theo"
         Row(3, !loop);   // quantity
-        bool sell = _outSell.Checked;
+        bool sell = OutSell, keep = OutKeep;
         Row(6, true);            // after the merges: keep / sell (one-shot) or trade / sell (loop)
-        Row(7, loop && !sell);   // trade threshold
+        Row(7, loop && !sell && !keep);   // trade threshold
         Row(8, sell);            // money of sold cards: collected by the tool or by hand
         Row(9, loop);
     }
@@ -592,9 +595,16 @@ public sealed class UpgradeTab : UserControl
         for (int i = 1; i < MaxLevel; i++) _steps[i].Visible = i + 1 <= TargetLevel;
         bool loopNow = _runLoop.Checked && !StockMode;
         _outLabel.Text = loopNow ? "Khi ép đủ mức" : "Khi ép xong";
-        _outTrade.Text = loopNow ? "Giao dịch" : "Giữ thẻ";
-        _steps[MaxLevel].Text = _outSell.Checked ? "Bán" : "Giao dịch";
-        _steps[MaxLevel].Visible = loopNow || (_outSell.Checked && !loopNow);
+        // the choices depend on the mode: loop = trade / sell / do nothing, one-shot = keep / sell
+        int keepIdx = _outMode.SelectedIndex;
+        _outBusy = true;
+        _outMode.Items.Clear();
+        if (loopNow) _outMode.Items.AddRange(new object[] { "Giao dịch", "Bán thị trường", "Không làm gì" });
+        else _outMode.Items.AddRange(new object[] { "Giữ thẻ", "Bán thị trường" });
+        _outMode.SelectedIndex = keepIdx < 0 ? 0 : Math.Min(keepIdx, _outMode.Items.Count - 1);
+        _outBusy = false;
+        _steps[MaxLevel].Text = OutSell ? "Bán" : "Giao dịch";
+        _steps[MaxLevel].Visible = loopNow ? !OutKeep : OutSell;
         ApplyLoopLayout();
     }
 
@@ -629,8 +639,8 @@ public sealed class UpgradeTab : UserControl
         double pace = PaceFactor[_pace.SelectedIndex < 0 ? 1 : _pace.SelectedIndex];
         bool loopMode = _runLoop.Checked && !StockMode;
         var plan = new UpgradePlan(spid, name, StockMode || loopMode ? 0 : BuyQty, StockMode ? 0 : (long)_maxPrice.Value,
-            TargetLevel, Rules, StockMode, pace, SellAfter: !_runLoop.Checked && _outSell.Checked, CollectAfter: _collectAuto.Checked);
-        if (_runLoop.Checked && !StockMode) CycleRequested?.Invoke(plan, new CycleOptions(TradeMin: (long)_tradeMin.Value, StopBelowEp: (long)_stopBelow.Value, SellMode: _outSell.Checked, AutoCollect: _collectAuto.Checked));
+            TargetLevel, Rules, StockMode, pace, SellAfter: !_runLoop.Checked && OutSell, CollectAfter: _collectAuto.Checked);
+        if (_runLoop.Checked && !StockMode) CycleRequested?.Invoke(plan, new CycleOptions(TradeMin: (long)_tradeMin.Value, StopBelowEp: (long)_stopBelow.Value, SellMode: OutSell, AutoCollect: _collectAuto.Checked, KeepMode: OutKeep));
         else RunRequested?.Invoke(plan);
     }
 }

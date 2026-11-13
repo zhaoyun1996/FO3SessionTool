@@ -650,21 +650,25 @@ public sealed class MainForm : Form
             $"XOAY VÒNG TỰ ĐỘNG cho {plan.Name} (SPID {plan.Spid}), ba việc chạy SONG SONG:" + nl + nl +
             $"• MUA thẻ +1 liên tục, từng thẻ một (giá trần: {(plan.MaxPrice > 0 ? plan.MaxPrice.ToString("N0") + " EP/thẻ" : "không giới hạn")}), chỉ mua khi dây chuyền còn chỗ." + nl +
             $"• ÉP ngay khi có đủ cặp thẻ theo rule, đến +{plan.Target}." + nl +
-            (opt.SellMode
+            (opt.KeepMode
+                ? $"• KHÔNG LÀM GÌ thêm: thẻ +{plan.Target} ép xong được giữ lại trong kho (không giao dịch, không bán). Chạy đến khi hết EP, kho đầy hoặc bạn bấm Dừng." + nl
+                : opt.SellMode
                 ? $"• BÁN: mỗi thẻ +{plan.Target} ép xong được đăng bán NGAY lên thị trường chuyển nhượng ở giá CAO NHẤT game cho phép. Phí đăng 1% khi đăng, game giữ 20% khi bán xong." + nl +
                   (opt.AutoCollect ? "• NHẬN TIỀN tự động khi thẻ bán xong (thẻ chưa có người mua thì tool chờ, không dừng dù EP đã hết)." : "• Tiền bán KHÔNG được nhận tự động: bạn tự nhận trong game.") + nl
                 : $"• GIAO DỊCH khi tổng giá trị thẻ +{plan.Target} đạt {opt.TradeMin:N0} - {opt.TradeMax:N0} EP: đổi hết (chọn phương án lớn nhất), không giữ lại thẻ nào." + nl) +
             "   Gồm cả thẻ +" + plan.Target + " của cầu thủ này đang có sẵn trong kho (ngoài đội hình); các thẻ thấp hơn có sẵn cũng được dùng để ép." + nl + nl +
             $"Rule:{nl}{rules}{nl}{nl}" +
-            $"Dừng khi: hết EP{(opt.StopBelowEp > 0 ? $" (không mua nếu EP còn lại sau khi mua dưới {opt.StopBelowEp:N0})" : "")}, lỗ {opt.MaxLossRounds} lần {(opt.SellMode ? "bán" : "giao dịch")} liên tiếp, phiên hết hạn, có lỗi, hoặc bạn bấm Dừng." + nl +
-            (opt.SellMode ? "Lãi/lỗ mỗi lần bán là ước tính (giá bán trừ 20% và phí đăng, trừ chi phí mua+ép). Mỗi lệnh đăng bán sẽ không hỏi lại. Thao tác này tiêu tốn EP thật." : "Mỗi giao dịch KHÔNG hoàn tác và sẽ không hỏi lại. Thao tác này tiêu tốn EP thật.") + nl + nl + "Bắt đầu?",
+            $"Dừng khi: hết EP{(opt.StopBelowEp > 0 ? $" (không mua nếu EP còn lại sau khi mua dưới {opt.StopBelowEp:N0})" : "")}{(opt.KeepMode ? "" : $", lỗ {opt.MaxLossRounds} lần {(opt.SellMode ? "bán" : "giao dịch")} liên tiếp")}, phiên hết hạn, có lỗi, hoặc bạn bấm Dừng." + nl +
+            (opt.KeepMode ? "Thao tác này tiêu tốn EP thật (mua và ép)." : opt.SellMode ? "Lãi/lỗ mỗi lần bán là ước tính (giá bán trừ 20% và phí đăng, trừ chi phí mua+ép). Mỗi lệnh đăng bán sẽ không hỏi lại. Thao tác này tiêu tốn EP thật." : "Mỗi giao dịch KHÔNG hoàn tác và sẽ không hỏi lại. Thao tác này tiêu tốn EP thật.") + nl + nl + "Bắt đầu?",
             "Xác nhận xoay vòng tự động", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
         if (ask != DialogResult.Yes) return;
 
         _upCts = new CancellationTokenSource();
         _upgrade.ResetSteps();
         _upgrade.SetRunning(true);
-        Log(opt.SellMode
+        Log(opt.KeepMode
+            ? $"[Xoay vòng] Bắt đầu: {plan.Name} (SPID {plan.Spid}), mua và ép đến +{plan.Target}, giữ thẻ (không giao dịch, không bán)."
+            : opt.SellMode
             ? $"[Xoay vòng] Bắt đầu song song: {plan.Name} (SPID {plan.Spid}), ép đến +{plan.Target}, bán thị trường giá cao nhất, nhận tiền {(opt.AutoCollect ? "tự động" : "thủ công")}."
             : $"[Xoay vòng] Bắt đầu song song: {plan.Name} (SPID {plan.Spid}), ép đến +{plan.Target}, đổi khi đạt {opt.TradeMin:N0}-{opt.TradeMax:N0} EP.");
         try
