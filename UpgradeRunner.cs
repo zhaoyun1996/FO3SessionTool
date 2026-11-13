@@ -64,6 +64,10 @@ public sealed class UpgradeRunner
     private readonly SemaphoreSlim _riskAsk = new(1, 1);
     /// <summary>false after a merge the server applied but did not succeed (cards may be lost or lowered): callers re-read the storage.</summary>
     internal bool LastEnhanceSucceeded { get; private set; } = true;
+    /// <summary>EP paid for restores after the last failed merge (the first restore is free), and what happened to the failed card.</summary>
+    internal long LastRestoreCost { get; private set; }
+    internal bool LastCardDiscarded { get; private set; }
+    private const int MaxRestores = 2;   // the first one is free, the second costs EP; after that the card stays as it is
 
     internal async Task<bool> AcceptRiskAsync(int lvl, int probability)
     {
@@ -210,7 +214,7 @@ public sealed class UpgradeRunner
                 if (!await EnhanceWithRecoveryAsync(main, mat, lvl, step, pace, ct)) return false;
 
                 if (!_api.LastHadMoney) _api.Spend(pv.EnhancePay);
-                fees += pv.EnhancePay;
+                fees += pv.EnhancePay + LastRestoreCost;
                 if (!LastEnhanceSucceeded)
                 {
                     // the server applied the merge and it failed: the storage tells what is left
@@ -249,7 +253,7 @@ public sealed class UpgradeRunner
     internal async Task<bool> EnhanceWithRecoveryAsync(string main, string mat, int lvl, int step, double pace, CancellationToken ct)
     {
         string lastRaw = "";
-        LastEnhanceSucceeded = true;
+        LastEnhanceSucceeded = true; LastRestoreCost = 0; LastCardDiscarded = false;
         for (int attempt = 1; attempt <= MaxEnhanceTries; attempt++)
         {
             try
@@ -257,7 +261,12 @@ public sealed class UpgradeRunner
                 _log($"[Ép thẻ] Đang gửi lệnh ép +{lvl} (lần {attempt}/{MaxEnhanceTries})...");
                 var r = await _api.EnhanceAsync(main, mat, ct);
                 if (r.Ok && r.Success && r.ResultGrade == lvl) { LastEnhanceSucceeded = true; return true; }
-                if (r.Ok && !r.Success) { LastEnhanceSucceeded = false; return true; }   // applied, but it failed: never repeat it blindly
+                if (r.Ok && !r.Success)   // applied, but it failed: never repeat it blindly
+                {
+                    LastEnhanceSucceeded = false;
+                    await RecoverFailedAsync(main, lvl, pace);
+                    return true;
+                }
                 lastRaw = r.Raw;
             }
             catch (OperationCanceledException) { throw; }
@@ -281,6 +290,44 @@ public sealed class UpgradeRunner
             catch (Exception ex) { _log("[Ép thẻ] Không đọc được kho để kiểm tra: " + ex.Message); }
         }
         return Fail(step, $"Ép +{lvl} thất bại sau {MaxEnhanceTries} lần: {GameApi.Trim(lastRaw)}");
+    }
+
+    /// <summary>
+    /// After a failed merge: restore the card (free, then once more for a fee) while the game offers it ("restore" field on the card), and when
+    /// the card ends at +0 discard it. Never throws and is not cancelled half-way: the callers re-read the storage afterwards.
+    /// </summary>
+    private async Task RecoverFailedAsync(string main, int lvl, double pace)
+    {
+        var ct = CancellationToken.None;
+        try
+        {
+            async Task<GameApi.OwnedCard?> Find() => (await _api.GetInventoryAsync(ct)).FirstOrDefault(c => c.Id == main);
+            await Pacing.Wait(1.5, 3, pace, ct);
+            var c = await Find();
+            if (c == null) { _log($"[Phục hồi] Thẻ …{Tail(main)} không còn trong kho."); return; }
+            for (int n = 1; n <= MaxRestores && c != null && c.RestoreGrade > c.Grade; n++)
+            {
+                long before = _api.LastWallet?.Ep ?? 0;
+                _log($"[Phục hồi] Thẻ …{Tail(main)} đang ở +{c.Grade}, phục hồi được về +{c.RestoreGrade}. Phục hồi lần {n}/{MaxRestores}" + (n > 1 ? " (có phí)..." : " (miễn phí)..."));
+                var r = await _api.RestoreAsync(ct);
+                if (!r.Ok) { _log("[Phục hồi] Lệnh phục hồi lỗi: " + GameApi.Trim(r.Raw)); break; }
+                long cost = Math.Max(0, before - (_api.LastWallet?.Ep ?? before));
+                LastRestoreCost += cost;
+                await Pacing.Wait(1.5, 3, pace, ct);
+                c = await Find();
+                _log(c == null ? "[Phục hồi] Thẻ không còn trong kho sau khi phục hồi."
+                    : $"[Phục hồi] Sau lần {n}: thẻ ở +{c.Grade}" + (cost > 0 ? $", phí {cost:N0} EP" : ", miễn phí") + (c.RestoreGrade > c.Grade ? "." : " (xong)."));
+            }
+            if (c != null && c.Grade == 0 && c.Group == GameApi.GroupNone)
+            {
+                _log($"[Phục hồi] Thẻ …{Tail(main)} về +0, bỏ thẻ này (xoá khỏi kho).");
+                await Pacing.Wait(1.5, 3, pace, ct);
+                var d = await _api.DeleteCardAsync(c.Id, ct);
+                LastCardDiscarded = d.Ok;
+                _log(d.Ok ? "[Phục hồi] Đã bỏ thẻ +0." : "[Phục hồi] Không bỏ được thẻ +0: " + GameApi.Trim(d.Raw));
+            }
+        }
+        catch (Exception ex) { _log("[Phục hồi] Lỗi khi phục hồi: " + ex.Message + " (kiểm tra kho trong game)."); }
     }
 
     private static string Tail(string id) => id.Length <= 6 ? id : id[^6..];

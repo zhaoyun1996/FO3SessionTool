@@ -399,7 +399,7 @@ public sealed class CycleRunner
             await Pacing.Wait(2.0, 4.5, pace, tok);
             if (!await _inner.EnhanceWithRecoveryAsync(main, mat, lvl, step, pace, tok)) { Stop($"Ép +{lvl} thất bại (xem nhật ký phía trên)."); return; }
             if (!_api.LastHadMoney) _api.Spend(pv.EnhancePay);
-            Interlocked.Add(ref _spent, pv.EnhancePay);
+            Interlocked.Add(ref _spent, pv.EnhancePay + _inner.LastRestoreCost);
             job = job with { Main = main, Mat = mat };
             if (!_inner.LastEnhanceSucceeded)
             {

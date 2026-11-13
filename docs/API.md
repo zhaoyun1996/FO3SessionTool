@@ -101,6 +101,12 @@ Phản hồi thành công:
 
 `EnhanceTail` luôn là `0/-1/111` (game luôn gửi đúng như vậy; tool bắt chước nguyên văn).
 
+### 4.0. Ép thất bại, phục hồi và bỏ thẻ
+
+- Ép thất bại: phản hồi `success:false` kèm `grade` (mức trước khi ép), `rgrade` (mức thẻ chính sau khi thất bại, có thể 0), `usepoint` (phí đã trừ). Thẻ chính trong `/coach/me` có thêm `"restore": {"grade": G, "max": 3}` (mức có thể phục hồi về); nguyên liệu luôn mất.
+- Phục hồi: `POST /player/enhance2.5/restore`, body `{"_method":"PUT"}`, **không có id thẻ** (server nhớ lần ép thất bại gần nhất). Lần đầu miễn phí, lần hai mất phí (đo được 20.000 EP với thẻ +3). Phản hồi luôn `success:false` dù thẻ đã về mức cũ: phải xét mức thẻ trong `/coach/me` (trường `restore` biến mất khi đã phục hồi xong).
+- Bỏ thẻ: `POST /player/{cardId}` body `{"_method":"DELETE"}` -> `{"result":true}`.
+
 ### 4.1. Xem trước: `GET /player/{mainId}/enhance2.5/{materialId}/preview/0/-1/111`
 Trường tool đọc: `grade` (mức thẻ sau khi ép), `price`, `probability` (xác suất thành công), `enhancepay` (EP phải trả), `needes.es` (ES cần).
 

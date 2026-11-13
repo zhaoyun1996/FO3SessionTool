@@ -19,7 +19,7 @@ def mask(o, key=""):
     if o is None or isinstance(o, bool): return o
     return shape(o) if SENSITIVE.search(key) else o
 
-def body_text(msg, limit=6000):
+def body_text(msg, limit=400000):
     t = msg.get_text(strict=False) or ""
     t = t[:limit]
     try: return json.dumps(mask(json.loads(t)), ensure_ascii=False, indent=2)

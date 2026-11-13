@@ -573,7 +573,8 @@ public sealed class MainForm : Form
         {
             var r = MessageBox.Show(
                 $"CẢNH BÁO: xác suất ép lên +{level} chỉ {probability}% (dưới 100%).{Environment.NewLine}{Environment.NewLine}" +
-                "Nếu ép không thành công thì thẻ có thể bị mất hoặc giảm cấp, và phí ép vẫn bị trừ." + Environment.NewLine + Environment.NewLine +
+                "Nếu ép không thành công thì thẻ có thể bị mất hoặc giảm cấp, và phí ép vẫn bị trừ." + Environment.NewLine +
+                "Tool sẽ tự phục hồi thẻ: lần đầu miễn phí, lần hai MẤT PHÍ EP; thẻ về +0 thì bị xoá khỏi kho." + Environment.NewLine + Environment.NewLine +
                 $"Chấp nhận rủi ro và tiếp tục ép lên +{level} (áp dụng cho các lần ép lên +{level} còn lại của lần chạy này)?" + Environment.NewLine +
                 "Chọn Không để dừng lại.",
                 "Xác suất ép thấp", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);

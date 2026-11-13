@@ -279,7 +279,8 @@ public sealed class GameApi
         try { LastCardCount = JsonNode.Parse(text)?["team"]?["players"]?.AsArray().Count; } catch { }
     }
 
-    public sealed record OwnedCard(string Id, long Spid, int Grade, bool InSquad, string Name = "", int Group = 2, long Value = 0);
+    /// <summary>RestoreGrade: the "restore" field the game puts on a card after a failed merge (grade it can be restored to), -1 when there is none.</summary>
+    public sealed record OwnedCard(string Id, long Spid, int Grade, bool InSquad, string Name = "", int Group = 2, long Value = 0, int RestoreGrade = -1);
     /// <summary>Lineup group of an owned card: 0 = starting XI, 1 = substitutes, 2 = not registered.</summary>
     public const int GroupStarter = 0, GroupBench = 1, GroupNone = 2;
     private const int BenchSlot = 28;   // squad.positions[].pos of the substitutes
@@ -319,6 +320,30 @@ public sealed class GameApi
         return r with { Ok = r.Ok && resp.IsSuccessStatusCode, Raw = resp.IsSuccessStatusCode ? text : $"HTTP {(int)resp.StatusCode}: {text}" };
     }
 
+    /// <summary>Restore the card of the last failed merge (the server remembers which one: no id in the request). The first restore is free,
+    /// a second one costs EP. Success is judged by the card's grade afterwards, NOT by "success" (it is false even when the card came back).</summary>
+    public async Task<(bool Ok, string Raw)> RestoreAsync(CancellationToken ct = default)
+    {
+        using var content = new ByteArrayContent(Encoding.UTF8.GetBytes("{\"_method\":\"PUT\"}"));
+        content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+        using var resp = await _http.PostAsync($"{_base}/player/enhance2.5/restore", content, ct);
+        var text = await resp.Content.ReadAsStringAsync(ct);
+        bool ok = resp.IsSuccessStatusCode && JsonNode.Parse(text)?["result"]?.GetValue<bool>() == true;
+        if (ok) ApplyMoney(text);
+        return (ok, resp.IsSuccessStatusCode ? text : $"HTTP {(int)resp.StatusCode}: {text}");
+    }
+
+    /// <summary>Delete a card from the storage for good (what the game's "discard player" does).</summary>
+    public async Task<(bool Ok, string Raw)> DeleteCardAsync(string cardId, CancellationToken ct = default)
+    {
+        using var content = new ByteArrayContent(Encoding.UTF8.GetBytes("{\"_method\":\"DELETE\"}"));
+        content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+        using var resp = await _http.PostAsync($"{_base}/player/{cardId}", content, ct);
+        var text = await resp.Content.ReadAsStringAsync(ct);
+        bool ok = resp.IsSuccessStatusCode && JsonNode.Parse(text)?["result"]?.GetValue<bool>() == true;
+        return (ok, resp.IsSuccessStatusCode ? text : $"HTTP {(int)resp.StatusCode}: {text}");
+    }
+
     /// <summary>Every card in the storage (coach/me -> team.players). InSquad marks cards that are in use (state set / lineup).</summary>
     public async Task<List<OwnedCard>> GetInventoryAsync(CancellationToken ct = default)
     {
@@ -344,7 +369,7 @@ public sealed class GameApi
             list.Add(new OwnedCard(id, p!["spid"]?.GetValue<long>() ?? 0, p["grade"]?.GetValue<int>() ?? 0,
                 squad.Contains(id) || p["state"] != null, p["jerseyname"]?.GetValue<string>() ?? "",
                 slot.TryGetValue(id, out var sl) ? (sl == BenchSlot ? GroupBench : GroupStarter) : (p["state"] != null ? GroupBench : GroupNone),
-                p["price"]?.GetValue<long>() ?? 0));
+                p["price"]?.GetValue<long>() ?? 0, p["restore"]?["grade"]?.GetValue<int>() ?? -1));
         }
         return list;
     }
