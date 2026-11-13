@@ -9,6 +9,7 @@ public sealed class KhoTab : UserControl
 
     private readonly DataGridView _grid = new();
     private readonly DarkButton _btnReload = new() { Text = "Tải lại kho", Width = 120, Anchor = AnchorStyles.Left };
+    private readonly DarkButton _btnClean = new() { Text = "Dọn thẻ +0", Width = 150, Enabled = false, Anchor = AnchorStyles.Left };
     private readonly Label _status = new() { AutoSize = true, ForeColor = Theme.Dim, Anchor = AnchorStyles.Left, Margin = new Padding(Theme.Gap, 0, 0, 0) };
     private readonly Label _pickInfo = new() { AutoSize = true, Anchor = AnchorStyles.Left, Font = Theme.Bold };
     private readonly DarkRadio _manual = new() { Text = "Tự chọn kết quả", Checked = true, Margin = new Padding(3, 5, 14, 5) };
@@ -30,6 +31,12 @@ public sealed class KhoTab : UserControl
     /// <summary>Raised with the ticked cards when the user presses Giao dịch.</summary>
     public event Action<List<GameApi.OwnedCard>, bool>? TradeRequested;   // (cards, automatic)
 
+    /// <summary>Raised with the unregistered +0 cards when the user presses Dọn thẻ +0 (the owner confirms and deletes them).</summary>
+    public event Action<List<GameApi.OwnedCard>>? CleanRequested;
+
+    /// <summary>Cards that are +0 and not registered in the squad: the only ones the clean-up may delete.</summary>
+    private List<GameApi.OwnedCard> ZeroCards() => _cards.Where(c => c.Grade == 0 && c.Group == GameApi.GroupNone).ToList();
+
     public KhoTab(Func<Task<List<GameApi.OwnedCard>>> load, Func<Task<Bitmap?>> sprite, Func<long, Task<PlayerDetail?>> detail, Action<string> log)
     {
         _load = load; _sprite = sprite; _detail = detail; _log = log;
@@ -44,7 +51,9 @@ public sealed class KhoTab : UserControl
         var top = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, Margin = new Padding(0, 0, 0, Theme.Gap) };
         _btnReload.Margin = new Padding(0, 2, 0, 0);
         _status.Margin = new Padding(Theme.Gap, 8, 0, 0);
+        _btnClean.Margin = new Padding(Theme.Gap, 2, 0, 0);
         top.Controls.Add(_btnReload);
+        top.Controls.Add(_btnClean);
         top.Controls.Add(_status);
         root.Controls.Add(top, 0, 0);
         root.SetColumnSpan(top, 2);
@@ -80,6 +89,7 @@ public sealed class KhoTab : UserControl
 
         _btnReload.Click += async (_, _) => await ReloadAsync();
         _btnTrade.Click += (_, _) => OnTrade();
+        _btnClean.Click += (_, _) => { var z = ZeroCards(); if (z.Count > 0) CleanRequested?.Invoke(z); };
         _grid.CellClick += (_, e) => { if (e.RowIndex >= 0 && _grid.Columns[e.ColumnIndex].Name == "pick") TogglePick(e.RowIndex); };
         _grid.CellDoubleClick += (_, e) => { if (e.RowIndex >= 0) TogglePick(e.RowIndex); };
         _grid.CellPainting += PaintCell;
@@ -275,6 +285,9 @@ public sealed class KhoTab : UserControl
             : $"Đã chọn {p.Count}/{TradeMaxCards} thẻ, tổng giá trị {p.Sum(c => c.Value):N0} EP" + (p.Sum(c => c.Value) > TradeWarnValue ? " - VƯỢT 1 TỶ" : "");
         _pickInfo.ForeColor = p.Count == 0 ? Theme.Dim : p.Sum(c => c.Value) > TradeWarnValue ? Theme.Warn : Theme.Text;
         _btnTrade.Enabled = _loggedIn && p.Count > 0 && TradeAvailable && !_tradeBusy;
+        int zero = ZeroCards().Count;
+        _btnClean.Text = zero > 0 ? $"Dọn thẻ +0 ({zero})" : "Dọn thẻ +0";
+        _btnClean.Enabled = _loggedIn && zero > 0 && !_tradeBusy && !_busy;
         _tradeNote.Text = TradeAvailable ? "Phương án lớn nhất = tiền tươi + giá cầu thủ nhận về." : "";
     }
 

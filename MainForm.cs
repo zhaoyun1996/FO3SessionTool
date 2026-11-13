@@ -102,6 +102,7 @@ public sealed class MainForm : Form
             Log);
         _kho.TradeAvailable = true;
         _kho.TradeRequested += async (cards, auto) => await OnTradeAsync(cards, auto);
+        _kho.CleanRequested += async cards => await OnCleanZeroAsync(cards);
         _tabKho = new TabPage("Kho cầu thủ") { Padding = new Padding(0, Theme.Gap, 0, 0) };
         _tabKho.Controls.Add(_kho);
         _tabs.TabPages.Add(_tabUpgrade);
@@ -367,6 +368,45 @@ public sealed class MainForm : Form
     // ---- trade ---------------------------------------------------------------------------
 
     private bool _trading;
+
+    /// <summary>Delete the unregistered +0 cards (what the game's "discard player" does). Irreversible, so the list is shown and confirmed first.</summary>
+    private async Task OnCleanZeroAsync(List<GameApi.OwnedCard> cards)
+    {
+        var api = _api;
+        if (api == null || _trading) return;
+        if (_upCts != null) { Warn("Đang chạy ép thẻ, hãy dừng trước khi dọn thẻ."); return; }
+        cards = cards.Where(c => c.Grade == 0 && c.Group == GameApi.GroupNone).ToList();   // never anything else
+        if (cards.Count == 0) return;
+        var names = string.Join(", ", cards.GroupBy(c => c.Name.Length > 0 ? c.Name : c.Spid.ToString()).Select(g => g.Count() > 1 ? $"{g.Key} ×{g.Count()}" : g.Key).Take(12));
+        var ok = MessageBox.Show(this,
+            $"Xoá vĩnh viễn {cards.Count} thẻ +0 chưa đăng ký khỏi kho?{Environment.NewLine}{Environment.NewLine}{names}{Environment.NewLine}{Environment.NewLine}" +
+            "Không thể hoàn tác. Thẻ trong đội hình chính / dự bị không bị đụng tới.",
+            "Dọn thẻ +0", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) == DialogResult.Yes;
+        if (!ok) return;
+        _trading = true;
+        _kho.SetTradeBusy(true);
+        int done = 0, failed = 0;
+        try
+        {
+            Log($"[Kho] Dọn {cards.Count} thẻ +0...");
+            foreach (var c in cards)
+            {
+                await Pacing.Wait(0.8, 1.8, 1.0, CancellationToken.None);
+                var r = await api.DeleteCardAsync(c.Id);
+                if (r.Ok) { done++; Log($"[Kho] Đã xoá thẻ +0 {c.Name} (…{(c.Id.Length > 6 ? c.Id[^6..] : c.Id)})."); }
+                else
+                {
+                    failed++;
+                    Log($"[Kho] Không xoá được thẻ +0 {c.Name}: {GameApi.Trim(r.Raw)}");
+                    if (failed >= 3) { Log("[Kho] Dừng dọn thẻ vì lỗi liên tiếp."); break; }
+                }
+            }
+            Log($"[Kho] Dọn thẻ +0 xong: xoá {done}/{cards.Count} thẻ" + (failed > 0 ? $", {failed} lỗi." : "."));
+            await _kho.ReloadAsync();
+        }
+        catch (Exception ex) { Log("[Kho] LỖI dọn thẻ: " + ex.Message); }
+        finally { _trading = false; _kho.SetTradeBusy(false); }
+    }
 
     private async Task OnTradeAsync(List<GameApi.OwnedCard> cards, bool auto)
     {
