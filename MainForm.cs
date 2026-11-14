@@ -107,7 +107,7 @@ public sealed class MainForm : Form
         _kho.CleanRequested += async cards => await OnCleanZeroAsync(cards);
         _tabKho = new TabPage("Kho cầu thủ") { Padding = new Padding(0, Theme.Gap, 0, 0) };
         _tabKho.Controls.Add(_kho);
-        _buy = new BuyTab(() => _api, _players, () => _upCts != null || _trading, Log);
+        _buy = new BuyTab(() => _api, async () => _sprite ??= await _players.LoadImageAsync(PlayerSearch.SpriteUrl) as Bitmap, _players, () => _upCts != null || _trading, Log);
         var tabBuy = new TabPage("Mua cầu thủ") { Padding = new Padding(0, Theme.Gap, 0, 0) };
         tabBuy.Controls.Add(_buy);
         _tabs.TabPages.Add(_tabUpgrade);

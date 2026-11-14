@@ -11,6 +11,8 @@ public sealed class BuyTab : UserControl
 
     private readonly Func<GameApi?> _api;
     private readonly PlayerSearch _players;
+    private readonly Func<Task<Bitmap?>> _sprite;
+    private Bitmap? _icons;
     private readonly Func<bool> _otherBusy;
     private readonly Action<string> _log;
 
@@ -40,9 +42,9 @@ public sealed class BuyTab : UserControl
 
     private sealed record Item(long Spid, string Name, int Season, string Pos, int Overall, int Stat, string Club);
 
-    public BuyTab(Func<GameApi?> api, PlayerSearch players, Func<bool> otherBusy, Action<string> log)
+    public BuyTab(Func<GameApi?> api, Func<Task<Bitmap?>> sprite, PlayerSearch players, Func<bool> otherBusy, Action<string> log)
     {
-        _api = api; _players = players; _otherBusy = otherBusy; _log = log;
+        _api = api; _sprite = sprite; _players = players; _otherBusy = otherBusy; _log = log;
         Dock = DockStyle.Fill;
 
         _season.Items.Add("Mọi mùa");
@@ -104,6 +106,21 @@ public sealed class BuyTab : UserControl
             if (!_picked.Remove(it.Spid)) _picked.Add(it.Spid);
             _grid.Rows[e.RowIndex].Cells["pick"].Value = _picked.Contains(it.Spid) ? "✔" : "";
             UpdateUi();
+        };
+        _grid.CellPainting += (_, e) =>
+        {
+            if (e.RowIndex < 0 || e.ColumnIndex < 0 || _grid.Columns[e.ColumnIndex].Name != "season" || _grid.Rows[e.RowIndex].Tag is not Item it) return;
+            e.PaintBackground(e.CellBounds, (e.State & DataGridViewElementStates.Selected) != 0);
+            var g = e.Graphics!; var b = e.CellBounds;
+            var r = new Rectangle(b.X + (b.Width - 20) / 2, b.Y + (b.Height - 20) / 2, 20, 20);
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            if (_icons != null && PlayerSearch.SeasonSpriteX.TryGetValue(it.Season, out var sx))
+            {
+                g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                g.DrawImage(_icons, r, new Rectangle(sx, 0, 18, 18), GraphicsUnit.Pixel);
+            }
+            else SeasonArt.Badge(g, r, it.Season);
+            e.Handled = true;
         };
         _grid.CellFormatting += (_, e) =>
         {
@@ -182,6 +199,7 @@ public sealed class BuyTab : UserControl
         {
             _status.Text = "Đang lọc...";
             await EnsureDbAsync();
+            if (_icons == null) { try { _icons = await _sprite(); _grid.Invalidate(); } catch { } }
             var items = new List<Item>();
             string name = _name.Text.Trim();
             if (name.Length > 0)
