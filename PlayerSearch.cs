@@ -174,22 +174,94 @@ public sealed class PlayerSearch : IDisposable
 
     public async Task<PlayerDetail?> GetDetailAsync(long spid, CancellationToken ct = default)
     {
-        PlayerDetail? d = null;
+        var d = await FetchSiteAsync(spid, ct);
+        if (d != null) { await LearnAsync(d); return d; }
+        return await LocalDetailAsync(spid, ct);
+    }
+
+    /// <summary>The fifaaddict page only (null when the site does not have the card or is unreachable).</summary>
+    private async Task<PlayerDetail?> FetchSiteAsync(long spid, CancellationToken ct)
+    {
         try
         {
             var html = await _http.GetStringAsync($"https://en.fifaaddict.com/fo3player.php?id={spid}", ct);
-            d = ParseDetail(spid, html);
+            return ParseDetail(spid, html);
         }
-        catch (Exception) when (!ct.IsCancellationRequested) { }
-        return d ?? await LocalDetailAsync(spid);
+        catch (Exception) when (!ct.IsCancellationRequested) { return null; }
     }
 
-    /// <summary>Fallback for cards fifaaddict does not have: the stats come from the game's own files (no name, nation or club there).</summary>
-    public static async Task<PlayerDetail?> LocalDetailAsync(long spid, string name = "")
+    // What the game files lack (nation names, season labels) is learned from every card fifaaddict does give us and kept between runs.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<int, string[]> _nations = new();   // local nationality id -> [name, flag code]
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<int, string> _seasonLabels = new();
+    private static string LearnedPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "FO3SessionTool", "learned.json");
+    private sealed class Learned { public Dictionary<int, string[]> Nations { get; set; } = new(); public Dictionary<int, string> Seasons { get; set; } = new(); }
+    private bool _learnedLoaded;
+    private readonly object _learnLock = new();
+
+    private void LoadLearned()
+    {
+        lock (_learnLock)
+        {
+            if (_learnedLoaded) return;
+            _learnedLoaded = true;
+            try
+            {
+                var l = System.Text.Json.JsonSerializer.Deserialize<Learned>(File.ReadAllText(LearnedPath));
+                if (l != null) { foreach (var kv in l.Nations) _nations[kv.Key] = kv.Value; foreach (var kv in l.Seasons) _seasonLabels[kv.Key] = kv.Value; }
+            }
+            catch { }
+        }
+    }
+
+    private async Task LearnAsync(PlayerDetail d)
+    {
+        LoadLearned();
+        var db = await LocalPlayerDb.GetAsync();
+        var row = db?.Find(d.Spid);
+        bool changed = false;
+        if (row != null && d.Nation.Length > 0 && d.NationCode.Length > 0 && !_nations.ContainsKey(row.Nation)) { _nations[row.Nation] = new[] { d.Nation, d.NationCode }; changed = true; }
+        if (d.SeasonLabel.Length > 0 && !_seasonLabels.ContainsKey(d.Season)) { _seasonLabels[d.Season] = d.SeasonLabel; changed = true; }
+        if (!changed) return;
+        lock (_learnLock)
+        {
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(LearnedPath)!);
+                File.WriteAllText(LearnedPath, System.Text.Json.JsonSerializer.Serialize(new Learned { Nations = _nations.ToDictionary(k => k.Key, k => k.Value), Seasons = _seasonLabels.ToDictionary(k => k.Key, k => k.Value) }));
+            }
+            catch { }
+        }
+    }
+
+    /// <summary>
+    /// For a card fifaaddict does not have: the stats come from the game's own files, and what those lack is filled in from fifaaddict: the name (and the
+    /// nation) from another season card of the same player, the nation name and season label from what was learned on other cards. The club stays empty.
+    /// </summary>
+    public async Task<PlayerDetail?> LocalDetailAsync(long spid, CancellationToken ct = default)
     {
         var db = await LocalPlayerDb.GetAsync();
         var row = db?.Find(spid);
-        return row == null ? null : db!.ToDetail(row, name);
+        if (db == null || row == null) return null;
+        LoadLearned();
+        var d = db.ToDetail(row);
+        if (_seasonLabels.TryGetValue(d.Season, out var label)) d = d with { SeasonLabel = label };
+        if (_nations.TryGetValue(row.Nation, out var nat)) d = d with { Nation = nat[0], NationCode = nat[1] };
+
+        var sibs = db.Siblings(row).Take(4).ToList();
+        if (sibs.Count > 0)
+        {
+            var found = await Task.WhenAll(sibs.Select(s => FetchSiteAsync(s.Spid, ct)));
+            for (int i = 0; i < sibs.Count; i++)
+            {
+                var s = found[i];
+                if (s == null || s.Name.Length == 0) continue;
+                await LearnAsync(s);
+                d = d with { Name = s.Name };
+                if (sibs[i].Nation == row.Nation && s.Nation.Length > 0) d = d with { Nation = s.Nation, NationCode = s.NationCode };
+                break;
+            }
+        }
+        return d;
     }
 
     private static long Price(string row, string region)

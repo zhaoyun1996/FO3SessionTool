@@ -10,12 +10,25 @@ namespace FO3SessionTool;
 /// </summary>
 public sealed class LocalPlayerDb
 {
-    public sealed record Row(long Spid, int Overall, int Potential, int[] Positions, int Foot, int WeakFoot, int SkillMoves, int Height, int Weight, int BirthDays);
+    public sealed record Row(long Spid, int Overall, int Potential, int[] Positions, int Foot, int WeakFoot, int SkillMoves, int Height, int Weight, int BirthDays, int Nation);
 
     private readonly Dictionary<long, Row> _rows;
     private LocalPlayerDb(Dictionary<long, Row> rows) => _rows = rows;
     public int Count => _rows.Count;
     public Row? Find(long spid) => _rows.TryGetValue(spid, out var r) ? r : null;
+
+    private Dictionary<long, List<Row>>? _byBase;
+
+    /// <summary>The other season cards of the same player: same last six digits of the SPID and the same birth date (a reused id of another person is skipped).
+    /// The base card (season 0) first, then the nearest seasons.</summary>
+    public List<Row> Siblings(Row r)
+    {
+        _byBase ??= _rows.Values.GroupBy(x => x.Spid % 1_000_000).ToDictionary(g => g.Key, g => g.ToList());
+        if (!_byBase.TryGetValue(r.Spid % 1_000_000, out var l)) return new();
+        long season = r.Spid / 1_000_000;
+        return l.Where(x => x.Spid != r.Spid && x.BirthDays == r.BirthDays)
+                .OrderBy(x => x.Spid / 1_000_000 == 0 ? -1 : Math.Abs(x.Spid / 1_000_000 - season)).ToList();
+    }
 
     // ---- loading (lazy, once, off the UI thread) -------------------------------------------------------------------------------
     private static Task<LocalPlayerDb?>? _task;
@@ -133,6 +146,7 @@ public sealed class LocalPlayerDb
         ("ypBQ", 150),          // 10 height
         ("sNZW", 50),           // 11 weight
         ("WVIU", int.MinValue), // 12 birthdate (days since 1582-10-14)
+        ("enmm", 0),            // 13 nationality id
     };
 
     private static uint U32(byte[] d, int o) => BitConverter.ToUInt32(d, o);
@@ -181,7 +195,7 @@ public sealed class LocalPlayerDb
             if (spid <= 0) continue;
             rows[spid] = new Row(spid, (int)Get(r, 1), (int)Get(r, 2),
                 new[] { (int)Get(r, 3), (int)Get(r, 4), (int)Get(r, 5), (int)Get(r, 6) }.Where(p => p >= 0).ToArray(),
-                (int)Get(r, 7), (int)Get(r, 8), (int)Get(r, 9), (int)Get(r, 10), (int)Get(r, 11), (int)Get(r, 12));
+                (int)Get(r, 7), (int)Get(r, 8), (int)Get(r, 9), (int)Get(r, 10), (int)Get(r, 11), (int)Get(r, 12), (int)Get(r, 13));
         }
         return rows.Count > 1000 ? new LocalPlayerDb(rows) : null;
     }
