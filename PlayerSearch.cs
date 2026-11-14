@@ -179,6 +179,17 @@ public sealed class PlayerSearch : IDisposable
         return await LocalDetailAsync(spid, ct);
     }
 
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<long, Task<PlayerDetail?>> _siteCache = new();
+
+    /// <summary>The fifaaddict page only, cached (null when the site does not have the card). Its active-position rating is the card's overall
+    /// as the site (and the player list) shows it; the game's own overallrating field is not the same number.</summary>
+    public Task<PlayerDetail?> GetSiteDetailCachedAsync(long spid)
+    {
+        var t = _siteCache.GetOrAdd(spid, async id => { var d = await FetchSiteAsync(id, CancellationToken.None); if (d != null) await LearnAsync(d); return d; });
+        t.ContinueWith(x => { if (x.IsFaulted || x.IsCanceled) _siteCache.TryRemove(spid, out _); }, TaskScheduler.Default);
+        return t;
+    }
+
     /// <summary>The fifaaddict page only (null when the site does not have the card or is unreachable).</summary>
     private async Task<PlayerDetail?> FetchSiteAsync(long spid, CancellationToken ct)
     {

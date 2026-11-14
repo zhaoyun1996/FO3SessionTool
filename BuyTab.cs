@@ -42,7 +42,7 @@ public sealed class BuyTab : UserControl
     private CancellationTokenSource? _cts;
     private bool _manualBusy;
 
-    private sealed record Item(long Spid, string Name, int Season, string Pos, int Overall, int Stat, string Club);
+    private sealed record Item(long Spid, string Name, int Season, string Pos, int Overall, int Stat, string Club, bool Site = false);
 
     public BuyTab(Func<GameApi?> api, Func<Task<Bitmap?>> sprite, PlayerSearch players, Func<bool> otherBusy, Action<string> log)
     {
@@ -273,19 +273,20 @@ public sealed class BuyTab : UserControl
                 {
                     if (p.Season == 0 || p.Spid / 1_000_000 == 0) continue;
                     var r = _db?.Find(p.Spid);
-                    if (r != null) { if (!MatchBase(r) || !InRange(p.Overall)) continue; items.Add(new Item(p.Spid, p.Name, p.Season, p.Position, p.Overall, p.Overall, _db!.ClubOf(p.Spid))); }
+                    if (r != null) { if (!MatchBase(r) || !InRange(p.Overall)) continue; items.Add(new Item(p.Spid, p.Name, p.Season, p.Position, p.Overall, p.Overall, _db!.ClubOf(p.Spid), true)); }
                     else
                     {
                         if (SelSeason >= 0 && p.Season != SelSeason) continue;
                         if (!InRange(p.Overall)) continue;
-                        items.Add(new Item(p.Spid, p.Name, p.Season, p.Position, p.Overall, p.Overall, ""));
+                        items.Add(new Item(p.Spid, p.Name, p.Season, p.Position, p.Overall, p.Overall, "", true));
                     }
                 }
             }
             else
             {
                 if (_db == null) { _status.Text = "Chưa đọc được dữ liệu game (Config gameDir). Hãy nhập tên cầu thủ để tìm."; return; }
-                foreach (var r in _db.All.Where(Match).OrderByDescending(StatOf).ThenBy(r => r.Spid).Take(MaxRows))
+                // the game files only narrow the candidates (season, position); the Tổng comes from the site afterwards, see ResolveAsync
+                foreach (var r in _db.All.Where(MatchBase).OrderByDescending(StatOf).ThenBy(r => r.Spid).Take(MaxRows))
                     items.Add(new Item(r.Spid, "", (int)(r.Spid / 1_000_000), PosName(r), r.Overall + PlayerSearch.StatBonus, StatOf(r), _db.ClubOf(r.Spid)));
             }
             if (ver != _ver) return;
@@ -293,7 +294,7 @@ public sealed class BuyTab : UserControl
             _lastFilter = FilterKey();
             Fill(items);
             // names of the local rows: fill in from the cache / siblings, a few at a time, without blocking the UI
-            _ = FillNamesAsync(items, ver);
+            _ = ResolveAsync(items, ver);
         }
         catch (Exception ex) { _status.Text = "Lỗi: " + ex.Message; }
         finally { _btnFind.Enabled = true; }
@@ -313,27 +314,54 @@ public sealed class BuyTab : UserControl
         UpdateUi();
     }
 
-    private async Task FillNamesAsync(List<Item> items, int ver)
+    /// <summary>Candidates read from the game files get their Tổng (and name, season label) from the site, a few at a time; with a Tổng range
+    /// the rows outside it are removed at the end. Cards the site does not have keep the game-file estimate.</summary>
+    private async Task ResolveAsync(List<Item> items, int ver)
     {
-        var sem = new SemaphoreSlim(4);
-        var tasks = items.Where(it => it.Name.Length == 0).Take(60).Select(async it =>
+        var todo = items.Where(i => !i.Site).ToList();
+        if (todo.Count == 0) return;
+        bool ranged = OvrFrom > 0 || OvrTo < int.MaxValue;
+        int done = 0;
+        var sem = new SemaphoreSlim(6);
+        var tasks = todo.Select(async it =>
         {
             await sem.WaitAsync();
             try
             {
-                var d = await _players.GetDetailCachedAsync(it.Spid);
-                if (d == null || ver != _ver || string.IsNullOrWhiteSpace(d.Name)) return;
+                if (ver != _ver) return;
+                var site = await _players.GetSiteDetailCachedAsync(it.Spid);
+                var d = site ?? await _players.GetDetailCachedAsync(it.Spid);
+                if (ver != _ver) return;
+                int rt = site?.Positions.FirstOrDefault(p => p.Active)?.Rating ?? 0;
                 BeginInvoke(() =>
                 {
+                    if (ver != _ver) return;
                     foreach (DataGridViewRow row in _grid.Rows)
-                        if (row.Tag is Item x && x.Spid == it.Spid) { { row.Cells["name"].Value = d.Name; row.Tag = x with { Name = d.Name }; if (d.SeasonLabel.Length > 0) row.Cells["club"].Value = d.SeasonLabel;
-                        if (x.Stat == 0 && d.Positions.FirstOrDefault(p => p.Active)?.Rating is int rt && rt > 10) { row.Cells["ovr"].Value = rt; row.Tag = x with { Name = d.Name, Stat = rt }; } } }
+                        if (row.Tag is Item x && x.Spid == it.Spid)
+                        {
+                            var nx = x with { Name = d?.Name is { Length: > 0 } nm ? nm : x.Name, Stat = rt > 10 ? rt : x.Stat, Site = site != null };
+                            row.Tag = nx;
+                            if (nx.Name.Length > 0) row.Cells["name"].Value = nx.Name;
+                            row.Cells["ovr"].Value = nx.Stat > 0 ? nx.Stat : "";
+                            if (d != null && d.SeasonLabel.Length > 0) row.Cells["club"].Value = d.SeasonLabel;
+                            break;
+                        }
+                    _status.Text = $"Đang đọc chỉ số tổng từ fifaaddict: {Interlocked.Increment(ref done)}/{todo.Count}...";
                 });
             }
             catch { }
             finally { sem.Release(); }
         });
         try { await Task.WhenAll(tasks); } catch { }
+        if (ver != _ver) return;
+        BeginInvoke(() =>
+        {
+            if (ver != _ver) return;
+            if (ranged)
+                for (int i = _grid.Rows.Count - 1; i >= 0; i--)
+                    if (_grid.Rows[i].Tag is Item x && !InRange(x.Stat)) _grid.Rows.RemoveAt(i);
+            _status.Text = $"{_grid.Rows.Count} cầu thủ. Bấm vào dòng để chọn nhiều cầu thủ rồi mua.";
+        });
     }
 
     private List<Item> Selected() => _grid.Rows.Cast<DataGridViewRow>().Select(r => r.Tag).OfType<Item>().Where(i => _picked.Contains(i.Spid)).ToList();
