@@ -67,7 +67,7 @@ public sealed class UpgradeRunner
     /// <summary>EP paid for restores after the last failed merge (the first restore is free), and what happened to the failed card.</summary>
     internal long LastRestoreCost { get; private set; }
     internal bool LastCardDiscarded { get; private set; }
-    private const int MaxRestores = 2;   // the first one is free, the second costs EP; after that the card stays as it is
+    private const int MaxRestores = 2;   // the first one is free; the second one costs EP and is only done when the first left the card at +0
 
     internal async Task<bool> AcceptRiskAsync(int lvl, int probability)
     {
@@ -307,8 +307,9 @@ public sealed class UpgradeRunner
             if (c == null) { _log($"[Phục hồi] Thẻ …{Tail(main)} không còn trong kho."); return; }
             for (int n = 1; n <= MaxRestores && c != null && c.RestoreGrade > c.Grade; n++)
             {
+                if (n > 1 && c.Grade > 0) break;   // the free restore got the card above +0: keep it, do not pay for a random second try
                 long before = _api.LastWallet?.Ep ?? 0;
-                _log($"[Phục hồi] Thẻ …{Tail(main)} đang ở +{c.Grade}, phục hồi được về +{c.RestoreGrade}. Phục hồi lần {n}/{MaxRestores}" + (n > 1 ? " (có phí)..." : " (miễn phí)..."));
+                _log($"[Phục hồi] Thẻ …{Tail(main)} đang ở +{c.Grade}, phục hồi được tối đa +{c.RestoreGrade} (kết quả ngẫu nhiên). Phục hồi lần {n}/{MaxRestores}" + (n > 1 ? " (có phí)..." : " (miễn phí)..."));
                 var r = await _api.RestoreAsync(ct);
                 if (!r.Ok) { _log("[Phục hồi] Lệnh phục hồi lỗi: " + GameApi.Trim(r.Raw)); break; }
                 long cost = Math.Max(0, before - (_api.LastWallet?.Ep ?? before));
