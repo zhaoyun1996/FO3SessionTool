@@ -184,11 +184,11 @@ public sealed class BuyTab : UserControl
                 MinimumWidth = fill ? 140 : 20, DefaultCellStyle = new DataGridViewCellStyle { Alignment = al },
             });
         Col("pick", "Chọn", 56);
-        Col("name", "Cầu thủ", 170, false, DataGridViewContentAlignment.MiddleLeft);
+        Col("name", "Cầu thủ", 220, true, DataGridViewContentAlignment.MiddleLeft);
         Col("season", "", 45);
         Col("pos", "Vị trí", 60);
         Col("ovr", "Tổng", 60);
-        Col("club", "Mùa", 200, true, DataGridViewContentAlignment.MiddleLeft);
+        Col("club", "Mùa", 190, false, DataGridViewContentAlignment.MiddleLeft);
         Col("spid", "SPID", 90);
     }
 
