@@ -32,6 +32,7 @@ public sealed class BuyTab : UserControl
     private readonly DarkCombo _pace = new() { DropDownStyle = ComboBoxStyle.DropDownList, Anchor = AnchorStyles.Left, Width = 150 };
     private static readonly double[] PaceFactor = { 1.8, 1.0, 0.5 };
 
+    private readonly HashSet<long> _picked = new();
     private LocalPlayerDb? _db;
     private int _ver;
     private CancellationTokenSource? _cts;
@@ -52,14 +53,14 @@ public sealed class BuyTab : UserControl
         _floorEp.Value = 0; _maxPrice.Value = 0; _maxCards.Value = 0;
 
         var filters = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = false, Padding = new Padding(0, 0, 0, 4) };
-        void Add(Control c, int left = 3) { c.Margin = new Padding(left, 3, 3, 3); filters.Controls.Add(c); }
-        Add(new Label { Text = "Mùa", AutoSize = true, Margin = new Padding(3, 8, 3, 0) });
+        void Add(Control c, int left = 3) { if (c is not Label) c.Margin = new Padding(left, 3, 3, 3); filters.Controls.Add(c); }
+        Add(new Label { Text = "Mùa", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(3, 0, 3, 0) });
         Add(_season);
-        Add(new Label { Text = "Vị trí", AutoSize = true, Margin = new Padding(8, 8, 3, 0) });
+        Add(new Label { Text = "Vị trí", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(8, 0, 3, 0) });
         Add(_pos);
-        Add(new Label { Text = "Chỉ số", AutoSize = true, Margin = new Padding(8, 8, 3, 0) });
+        Add(new Label { Text = "Chỉ số", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(8, 0, 3, 0) });
         Add(_stat);
-        Add(new Label { Text = "tối thiểu", AutoSize = true, Margin = new Padding(3, 8, 3, 0) });
+        Add(new Label { Text = "tối thiểu", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(3, 0, 3, 0) });
         Add(_statMin);
         _btnFind.Margin = new Padding(12, 3, 3, 3); filters.Controls.Add(_btnFind);
 
@@ -72,18 +73,18 @@ public sealed class BuyTab : UserControl
         StyleGrid();
 
         var opts = new FlowLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true, WrapContents = true, Padding = new Padding(0, 4, 0, 0) };
-        void O(Control c, int left = 3) { c.Margin = new Padding(left, 3, 3, 3); opts.Controls.Add(c); }
-        O(new Label { Text = "Dừng khi EP dưới", AutoSize = true, Margin = new Padding(3, 8, 3, 0) });
+        void O(Control c, int left = 3) { if (c is not Label) c.Margin = new Padding(left, 3, 3, 3); opts.Controls.Add(c); }
+        O(new Label { Text = "Dừng khi EP dưới", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(3, 0, 3, 0) });
         O(_floorEp);
-        O(new Label { Text = "Giá tối đa/thẻ (0 = không)", AutoSize = true, Margin = new Padding(10, 8, 3, 0) });
+        O(new Label { Text = "Giá tối đa/thẻ (0 = không)", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(10, 0, 3, 0) });
         O(_maxPrice);
-        O(new Label { Text = "Tối đa số thẻ (0 = không)", AutoSize = true, Margin = new Padding(10, 8, 3, 0) });
+        O(new Label { Text = "Tối đa số thẻ (0 = không)", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(10, 0, 3, 0) });
         O(_maxCards);
         O(_anyGrade, 10);
-        O(new Label { Text = "Tốc độ", AutoSize = true, Margin = new Padding(10, 8, 3, 0) });
+        O(new Label { Text = "Tốc độ", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(10, 0, 3, 0) });
         O(_pace);
         var btns = new FlowLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true, WrapContents = false, Padding = new Padding(0, 2, 0, 0) };
-        _btnBuyOnce.Margin = new Padding(3); _btnAuto.Margin = new Padding(3); _status.Margin = new Padding(12, 8, 3, 0);
+        _btnBuyOnce.Margin = new Padding(3); _btnAuto.Margin = new Padding(3); _status.Anchor = AnchorStyles.Left; _status.Margin = new Padding(12, 0, 3, 0);
         btns.Controls.Add(_btnBuyOnce); btns.Controls.Add(_btnAuto); btns.Controls.Add(_status);
 
         Controls.Add(_grid);
@@ -97,7 +98,17 @@ public sealed class BuyTab : UserControl
         _name.KeyDown += async (_, e) => { if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; await FindAsync(); } };
         _btnBuyOnce.Click += async (_, _) => await BuyOnceAsync();
         _btnAuto.Click += async (_, _) => await ToggleAutoAsync();
-        _grid.SelectionChanged += (_, _) => UpdateUi();
+        _grid.CellClick += (_, e) =>
+        {
+            if (e.RowIndex < 0 || _grid.Rows[e.RowIndex].Tag is not Item it) return;
+            if (!_picked.Remove(it.Spid)) _picked.Add(it.Spid);
+            _grid.Rows[e.RowIndex].Cells["pick"].Value = _picked.Contains(it.Spid) ? "✔" : "";
+            UpdateUi();
+        };
+        _grid.CellFormatting += (_, e) =>
+        {
+            if (e.RowIndex >= 0 && _grid.Columns[e.ColumnIndex].Name == "pick") { e.CellStyle!.ForeColor = Theme.Accent; e.CellStyle.Font = Theme.Bold; }
+        };
         UpdateUi();
     }
 
@@ -106,7 +117,7 @@ public sealed class BuyTab : UserControl
         var g = _grid;
         g.Dock = DockStyle.Fill;
         g.ReadOnly = true; g.AllowUserToAddRows = false; g.AllowUserToDeleteRows = false; g.AllowUserToResizeRows = false;
-        g.SelectionMode = DataGridViewSelectionMode.FullRowSelect; g.MultiSelect = true;
+        g.SelectionMode = DataGridViewSelectionMode.FullRowSelect; g.MultiSelect = false;
         Theme.StyleGrid(g);
         g.ColumnHeadersHeight = 30; g.RowTemplate.Height = 26;
         g.ColumnHeadersDefaultCellStyle.ForeColor = Theme.Text;
@@ -118,12 +129,11 @@ public sealed class BuyTab : UserControl
                 AutoSizeMode = fill ? DataGridViewAutoSizeColumnMode.Fill : DataGridViewAutoSizeColumnMode.None,
                 MinimumWidth = fill ? 140 : 20, DefaultCellStyle = new DataGridViewCellStyle { Alignment = al },
             });
+        Col("pick", "Chọn", 56);
         Col("name", "Cầu thủ", 200, true, DataGridViewContentAlignment.MiddleLeft);
         Col("season", "Mùa", 55);
         Col("pos", "Vị trí", 60);
-        Col("ovr", "Tổng", 60);
         Col("stat", "Chỉ số lọc", 85);
-        Col("club", "CLB", 160, false, DataGridViewContentAlignment.MiddleLeft);
         Col("spid", "SPID", 90);
     }
 
@@ -212,10 +222,10 @@ public sealed class BuyTab : UserControl
         _grid.Rows.Clear();
         foreach (var it in items)
         {
-            int i = _grid.Rows.Add(it.Name.Length > 0 ? it.Name : "(SPID " + it.Spid + ")", it.Season, it.Pos, it.Overall, it.Stat, it.Club, it.Spid);
+            int i = _grid.Rows.Add(_picked.Contains(it.Spid) ? "✔" : "", it.Name.Length > 0 ? it.Name : "(SPID " + it.Spid + ")", it.Season, it.Pos, it.Stat, it.Spid);
             _grid.Rows[i].Tag = it;
         }
-        _status.Text = $"{items.Count} cầu thủ" + (items.Count >= MaxRows ? $" (hiện {MaxRows} đầu tiên, hãy lọc thêm)" : "") + ". Chọn dòng rồi mua.";
+        _status.Text = $"{items.Count} cầu thủ" + (items.Count >= MaxRows ? $" (hiện {MaxRows} đầu tiên, hãy lọc thêm)" : "") + ". Bấm vào dòng để chọn nhiều cầu thủ rồi mua.";
         UpdateUi();
     }
 
@@ -241,14 +251,14 @@ public sealed class BuyTab : UserControl
         try { await Task.WhenAll(tasks); } catch { }
     }
 
-    private List<Item> Selected() => _grid.SelectedRows.Cast<DataGridViewRow>().OrderBy(r => r.Index).Select(r => r.Tag).OfType<Item>().ToList();
+    private List<Item> Selected() => _grid.Rows.Cast<DataGridViewRow>().Select(r => r.Tag).OfType<Item>().Where(i => _picked.Contains(i.Spid)).ToList();
 
     private bool Auto => _cts != null;
 
     private void UpdateUi()
     {
         bool login = _api() != null;
-        bool any = _grid.SelectedRows.Count > 0;
+        bool any = _picked.Count > 0;
         _btnBuyOnce.Enabled = login && any && !Auto && !_manualBusy;
         _btnAuto.Enabled = login && (Auto || any);
         _btnAuto.Text = Auto ? "Dừng mua" : "Bắt đầu mua tự động";
