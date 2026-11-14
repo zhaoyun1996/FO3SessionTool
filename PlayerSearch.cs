@@ -243,7 +243,7 @@ public sealed class PlayerSearch : IDisposable
         var row = db?.Find(spid);
         if (db == null || row == null) return null;
         LoadLearned();
-        var d = db.ToDetail(row);
+        var d = db.ToDetail(row, "", db.ClubOf(spid));
         if (_seasonLabels.TryGetValue(d.Season, out var label)) d = d with { SeasonLabel = label };
         if (_nations.TryGetValue(row.Nation, out var nat)) d = d with { Nation = nat[0], NationCode = nat[1] };
 
