@@ -196,7 +196,12 @@ public sealed class PlayerSearch : IDisposable
     private static string LearnedPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "FO3SessionTool", "learned.json");
     private sealed class Learned { public Dictionary<int, string[]> Nations { get; set; } = new(); public Dictionary<int, string> Seasons { get; set; } = new(); }
     private bool _learnedLoaded;
-    public string SeasonLabelOf(int season) { LoadLearned(); return _seasonLabels.TryGetValue(season, out var l) ? l : ""; }
+    public string SeasonLabelOf(int season)
+    {
+        LoadLearned();
+        if (_seasonLabels.TryGetValue(season, out var l)) return l;
+        return season == 33 && _seasonLabels.TryGetValue(31, out var l31) ? l31 : "";   // the site shows season 33 as season 31 (EUROLEAGUE LEGEND)
+    }
     private readonly object _learnLock = new();
 
     private void LoadLearned()

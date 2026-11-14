@@ -97,8 +97,7 @@ public sealed class KhoTab : UserControl
             listBox.Text = _showAll.Checked ? "Cầu thủ trong kho (đội hình chính, dự bị, chưa đăng ký)" : "Cầu thủ chưa đăng ký trong kho";
             if (_cards.Count > 0) Fill();
         };
-        _grid.CellClick += (_, e) => { if (e.RowIndex >= 0 && _grid.Columns[e.ColumnIndex].Name == "pick") TogglePick(e.RowIndex); };
-        _grid.CellDoubleClick += (_, e) => { if (e.RowIndex >= 0) TogglePick(e.RowIndex); };
+        _grid.CellClick += (_, e) => { if (e.RowIndex >= 0) TogglePick(e.RowIndex); };   // one click on the row ticks / unticks it
         _grid.CellPainting += PaintCell;
         UpdateTradeUi();
     }

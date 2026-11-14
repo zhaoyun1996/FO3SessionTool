@@ -229,9 +229,12 @@ public sealed class BuyTab : UserControl
 
     private string SeasonName(int season) { var l = _players.SeasonLabelOf(season); return l.Length > 0 ? l : $"Mùa {season}"; }
 
-    private static int StatOf(LocalPlayerDb.Row r) => r.Overall + PlayerSearch.StatBonus;
+    // some seasons carry a placeholder rating of 1 in the game files: unknown (0) until the real value is read from the site
+    private static int StatOf(LocalPlayerDb.Row r) => r.Overall <= 1 ? 0 : r.Overall + PlayerSearch.StatBonus;
 
-    private bool Match(LocalPlayerDb.Row r)
+    private bool Match(LocalPlayerDb.Row r) => MatchBase(r) && InRange(StatOf(r));
+
+    private bool MatchBase(LocalPlayerDb.Row r)
     {
         int s = SelSeason;
         if (r.Spid / 1_000_000 == 0) return false;   // season 0 (base cards) is never offered
@@ -241,7 +244,7 @@ public sealed class BuyTab : UserControl
             string want = _pos.SelectedIndex switch { 1 => "gk", 2 => "def", 3 => "mid", _ => "att" };
             if (r.Positions.Length == 0 || LocalPlayerDb.PosGroup(r.Positions[0]) != want) return false;
         }
-        return InRange(StatOf(r));
+        return true;
     }
 
     private static string PosName(LocalPlayerDb.Row r)
@@ -270,7 +273,7 @@ public sealed class BuyTab : UserControl
                 {
                     if (p.Season == 0 || p.Spid / 1_000_000 == 0) continue;
                     var r = _db?.Find(p.Spid);
-                    if (r != null) { if (!Match(r)) continue; items.Add(new Item(p.Spid, p.Name, p.Season, p.Position, p.Overall, StatOf(r), _db!.ClubOf(p.Spid))); }
+                    if (r != null) { if (!MatchBase(r) || !InRange(p.Overall)) continue; items.Add(new Item(p.Spid, p.Name, p.Season, p.Position, p.Overall, p.Overall, _db!.ClubOf(p.Spid))); }
                     else
                     {
                         if (SelSeason >= 0 && p.Season != SelSeason) continue;
@@ -303,7 +306,7 @@ public sealed class BuyTab : UserControl
         _grid.Rows.Clear();
         foreach (var it in items)
         {
-            int i = _grid.Rows.Add("", it.Name.Length > 0 ? it.Name : "(SPID " + it.Spid + ")", it.Season, it.Pos, it.Stat, ClubText(it), it.Spid);
+            int i = _grid.Rows.Add("", it.Name.Length > 0 ? it.Name : "(SPID " + it.Spid + ")", it.Season, it.Pos, it.Stat > 0 ? it.Stat : "", ClubText(it), it.Spid);
             _grid.Rows[i].Tag = it;
         }
         _status.Text = $"{items.Count} cầu thủ" + (items.Count >= MaxRows ? $" (hiện {MaxRows} đầu tiên, hãy lọc thêm)" : "") + ". Bấm vào dòng để chọn nhiều cầu thủ rồi mua.";
@@ -323,7 +326,8 @@ public sealed class BuyTab : UserControl
                 BeginInvoke(() =>
                 {
                     foreach (DataGridViewRow row in _grid.Rows)
-                        if (row.Tag is Item x && x.Spid == it.Spid) { { row.Cells["name"].Value = d.Name; row.Tag = x with { Name = d.Name }; if (d.SeasonLabel.Length > 0) row.Cells["club"].Value = d.SeasonLabel; } }
+                        if (row.Tag is Item x && x.Spid == it.Spid) { { row.Cells["name"].Value = d.Name; row.Tag = x with { Name = d.Name }; if (d.SeasonLabel.Length > 0) row.Cells["club"].Value = d.SeasonLabel;
+                        if (x.Stat == 0 && d.Positions.FirstOrDefault(p => p.Active)?.Rating is int rt && rt > 10) { row.Cells["ovr"].Value = rt; row.Tag = x with { Name = d.Name, Stat = rt }; } } }
                 });
             }
             catch { }
