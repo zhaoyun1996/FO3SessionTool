@@ -17,9 +17,10 @@ public sealed class BuyTab : UserControl
     private readonly Action<string> _log;
 
     private readonly DarkTextBox _name = new() { PlaceholderText = "Tên cầu thủ (để trống = lọc theo dữ liệu game)", Anchor = AnchorStyles.Left | AnchorStyles.Right };
-    private readonly DarkCombo _season = new() { DropDownStyle = ComboBoxStyle.DropDownList, Anchor = AnchorStyles.Left, Width = 100 };
+    private readonly DarkCombo _season = new() { DropDownStyle = ComboBoxStyle.DropDownList, Anchor = AnchorStyles.Left, Width = 210, DropDownWidth = 280 };
     private readonly DarkCombo _pos = new() { DropDownStyle = ComboBoxStyle.DropDownList, Anchor = AnchorStyles.Left, Width = 120 };
-    private readonly DarkNumber _statMin = new() { Minimum = 0, Maximum = 200, Value = 0, Width = 70, Anchor = AnchorStyles.Left };
+    private readonly DarkTextBox _ovrFrom = new() { PlaceholderText = "từ", Width = 64, Anchor = AnchorStyles.Left };
+    private readonly DarkTextBox _ovrTo = new() { PlaceholderText = "đến", Width = 64, Anchor = AnchorStyles.Left };
     private readonly DarkButton _btnFind = new() { Text = "Lọc / Tìm", Width = 110, Anchor = AnchorStyles.Left };
     private readonly DataGridView _grid = new();
     private readonly Label _status = new() { AutoSize = true, ForeColor = Theme.Dim, Anchor = AnchorStyles.Left };
@@ -58,8 +59,10 @@ public sealed class BuyTab : UserControl
         Add(_season);
         Add(new Label { Text = "Vị trí", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(8, 0, 3, 0) });
         Add(_pos);
-        Add(new Label { Text = "Tổng tối thiểu", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(8, 0, 3, 0) });
-        Add(_statMin);
+        Add(new Label { Text = "Tổng", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(8, 0, 3, 0) });
+        Add(_ovrFrom);
+        Add(new Label { Text = "-", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 0, 0, 0) });
+        Add(_ovrTo);
         _btnFind.Margin = new Padding(12, 3, 3, 3); filters.Controls.Add(_btnFind);
 
         var nameRow = new TableLayoutPanel { Dock = DockStyle.Top, ColumnCount = 2, RowCount = 1, Height = Theme.ButtonH + 6 };
@@ -135,6 +138,7 @@ public sealed class BuyTab : UserControl
         };
 
         UpdateUi();
+        _ = EnsureDbAsync();   // fill the season list right away
     }
 
     private void StyleGrid()
@@ -174,11 +178,16 @@ public sealed class BuyTab : UserControl
         var keep = _season.SelectedIndex;
         _season.Items.Clear();
         _season.Items.Add("Mọi mùa");
-        foreach (var s in seasons) _season.Items.Add($"Mùa {s}");
+        foreach (var s in seasons) { var lb = _players.SeasonLabelOf(s); _season.Items.Add(lb.Length > 0 ? $"Mùa {s} - {lb}" : $"Mùa {s}"); }
         _season.SelectedIndex = Math.Min(keep, _season.Items.Count - 1);
     }
 
-    private int SelSeason => _season.SelectedIndex <= 0 ? -1 : int.Parse(((string)_season.SelectedItem!).Substring(4));
+    private static int ParseOr(string t, int def) => int.TryParse(t.Trim(), out var v) ? v : def;
+    private int OvrFrom => Math.Max(0, ParseOr(_ovrFrom.Text, 0));
+    private int OvrTo => ParseOr(_ovrTo.Text, int.MaxValue);
+    private bool InRange(int v) => v >= OvrFrom && v <= OvrTo;
+
+    private int SelSeason => _season.SelectedIndex <= 0 ? -1 : int.Parse(System.Text.RegularExpressions.Regex.Match((string)_season.SelectedItem!, @"\d+").Value);
 
     private static int StatOf(LocalPlayerDb.Row r) => r.Overall + PlayerSearch.StatBonus;
 
@@ -191,7 +200,7 @@ public sealed class BuyTab : UserControl
             string want = _pos.SelectedIndex switch { 1 => "gk", 2 => "def", 3 => "mid", _ => "att" };
             if (r.Positions.Length == 0 || LocalPlayerDb.PosGroup(r.Positions[0]) != want) return false;
         }
-        return StatOf(r) >= (int)_statMin.Value;
+        return InRange(StatOf(r));
     }
 
     private static string PosName(LocalPlayerDb.Row r)
@@ -219,7 +228,7 @@ public sealed class BuyTab : UserControl
                     else
                     {
                         if (SelSeason >= 0 && p.Season != SelSeason) continue;
-                        if (p.Overall < (int)_statMin.Value) continue;
+                        if (!InRange(p.Overall)) continue;
                         items.Add(new Item(p.Spid, p.Name, p.Season, p.Position, p.Overall, p.Overall, ""));
                     }
                 }
@@ -227,7 +236,7 @@ public sealed class BuyTab : UserControl
             else
             {
                 if (_db == null) { _status.Text = "Chưa đọc được dữ liệu game (Config gameDir). Hãy nhập tên cầu thủ để tìm."; return; }
-                bool filtered = SelSeason >= 0 || _pos.SelectedIndex > 0 || (int)_statMin.Value > 0;
+                bool filtered = SelSeason >= 0 || _pos.SelectedIndex > 0 || OvrFrom > 0 || OvrTo < int.MaxValue;
                 if (!filtered) { _status.Text = "Chọn ít nhất một điều kiện (mùa / vị trí / chỉ số) hoặc nhập tên."; return; }
                 foreach (var r in _db.All.Where(Match).OrderByDescending(StatOf).ThenBy(r => r.Spid).Take(MaxRows))
                     items.Add(new Item(r.Spid, "", (int)(r.Spid / 1_000_000), PosName(r), r.Overall + PlayerSearch.StatBonus, StatOf(r), _db.ClubOf(r.Spid)));

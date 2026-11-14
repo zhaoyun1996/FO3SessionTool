@@ -72,7 +72,7 @@ public sealed class DarkTextBox : UserControl
     protected override void OnSizeChanged(EventArgs e) { base.OnSizeChanged(e); Layout_(); }
     public override string Text { get => _tb.Text; set => _tb.Text = value; }
     private string _placeholder = "";
-    [DefaultValue("")] public string PlaceholderText { get => _placeholder; set { _placeholder = value; Invalidate(); } }
+    [DefaultValue("")] public string PlaceholderText { get => _placeholder; set { _placeholder = value; _tb.PlaceholderText = value; Invalidate(); } }
     [DefaultValue(false)] public bool UseSystemPasswordChar { get => _tb.UseSystemPasswordChar; set => _tb.UseSystemPasswordChar = value; }
     protected override void OnEnabledChanged(EventArgs e) { base.OnEnabledChanged(e); _tb.Enabled = Enabled; _tb.ForeColor = Enabled ? Theme.Text : Theme.Dim; Invalidate(); }
     public new bool Focus() => _tb.Focus();
@@ -81,9 +81,6 @@ public sealed class DarkTextBox : UserControl
     {
         using var pen = new Pen(_tb.Focused ? Theme.Accent : Theme.Border);
         e.Graphics.DrawRectangle(pen, 0, 0, Width - 1, Height - 1);
-        if (_tb.Text.Length == 0 && _placeholder.Length > 0)
-            TextRenderer.DrawText(e.Graphics, _placeholder, Theme.Body, new Rectangle(10, 0, Width - 14, Height), Theme.Dim,
-                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis);
     }
 }
 
