@@ -35,6 +35,7 @@ public sealed class MainForm : Form
     private UpgradeTab _upgrade = null!;
     private KhoTab _kho = null!;
     private TabPage _tabKho = null!;
+    private BuyTab _buy = null!;
     private CancellationTokenSource? _upCts;
 
     public MainForm(Config cfg)
@@ -106,7 +107,11 @@ public sealed class MainForm : Form
         _kho.CleanRequested += async cards => await OnCleanZeroAsync(cards);
         _tabKho = new TabPage("Kho cầu thủ") { Padding = new Padding(0, Theme.Gap, 0, 0) };
         _tabKho.Controls.Add(_kho);
+        _buy = new BuyTab(() => _api, _players, () => _upCts != null || _trading, Log);
+        var tabBuy = new TabPage("Mua cầu thủ") { Padding = new Padding(0, Theme.Gap, 0, 0) };
+        tabBuy.Controls.Add(_buy);
         _tabs.TabPages.Add(_tabUpgrade);
+        _tabs.TabPages.Add(tabBuy);
         _tabs.TabPages.Add(_tabKho);
         _tabs.SelectedIndexChanged += async (_, _) => { if (_tabs.SelectedTab == _tabKho) await _kho.ReloadAsync(); };
         _tabs.TabPages.Add(_tabFind);
@@ -316,6 +321,7 @@ public sealed class MainForm : Form
         _ = RefreshWalletAsync(api);
         _upgrade.SetLoggedIn(true);
         _kho.SetLoggedIn(true);
+        _buy.SetLoggedIn(true);
         _btnAuth.Text = "Đăng xuất";
         _acct.Text = $"● {user}    |    Session: {MaskToken(token)}";
         _acct.ForeColor = Theme.Success;
@@ -360,6 +366,7 @@ public sealed class MainForm : Form
         SessionStore.Clear();
         _upgrade.SetLoggedIn(false);
         _kho.SetLoggedIn(false);
+        _buy.SetLoggedIn(false);
         _btnAuth.Text = "Đăng nhập";
         _acct.Text = "Chưa đăng nhập";
         _acct.ForeColor = Theme.Dim;
@@ -375,7 +382,7 @@ public sealed class MainForm : Form
     {
         var api = _api;
         if (api == null || _trading) return;
-        if (_upCts != null) { Warn("Đang chạy ép thẻ, hãy dừng trước khi dọn thẻ."); return; }
+        if (_upCts != null || _buy.Running) { Warn("Đang chạy ép thẻ / mua tự động, hãy dừng trước khi dọn thẻ."); return; }
         cards = cards.Where(c => c.Grade == 0 && c.Group == GameApi.GroupNone).ToList();   // never anything else
         if (cards.Count == 0) return;
         var names = string.Join(", ", cards.GroupBy(c => c.Name.Length > 0 ? c.Name : c.Spid.ToString()).Select(g => g.Count() > 1 ? $"{g.Key} ×{g.Count()}" : g.Key).Take(12));
@@ -413,7 +420,7 @@ public sealed class MainForm : Form
     {
         var api = _api;
         if (api == null || _trading) return;
-        if (_upCts != null) { Warn("Đang chạy ép thẻ, hãy dừng trước khi giao dịch."); return; }
+        if (_upCts != null || _buy.Running) { Warn("Đang chạy ép thẻ / mua tự động, hãy dừng trước khi giao dịch."); return; }
         _trading = true;
         _kho.SetTradeBusy(true);
         try
@@ -628,6 +635,7 @@ public sealed class MainForm : Form
     {
         if (_api == null) { Warn("Hãy đăng nhập trước."); return; }
         if (_upCts != null) return;
+        if (_buy.Running) { Warn("Đang mua tự động, hãy dừng trước."); return; }
         plan = await WithCeilingAsync(plan);
 
         string sellNote = "";
@@ -684,6 +692,7 @@ public sealed class MainForm : Form
     {
         if (_api == null) { Warn("Hãy đăng nhập trước."); return; }
         if (_upCts != null) return;
+        if (_buy.Running) { Warn("Đang mua tự động, hãy dừng trước."); return; }
         plan = await WithCeilingAsync(plan);
 
         var nl = Environment.NewLine;

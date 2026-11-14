@@ -119,7 +119,7 @@ public sealed class UpgradeRunner
                 polls = 0;
 
                 _log($"[Ép thẻ] Thấy thẻ +1 giá {cheapest.Price:N0} EP, chuẩn bị mua ({bought + 1}/{plan.Quantity})...");
-                await Pacing.Wait(0.8, 2.0, pace, ct);   // look at the price, then click buy
+                await Pacing.Wait(1.5, 3.0, pace, ct);   // look at the price, then click buy
                 _log($"[Ép thẻ] Đang gửi lệnh mua thẻ +1 giá {cheapest.Price:N0} EP...");
                 var buy = await _api.BuyAsync(plan.Spid, 1, cheapest.Price, ct);
                 if (!buy.Ok && GameApi.IsStorageFull(buy.Raw))
@@ -129,7 +129,7 @@ public sealed class UpgradeRunner
                     // usually the price moved between search and buy; re-search and try again
                     _log($"[Ép thẻ] Mua thất bại ({GameApi.Trim(buy.Raw)}), thử lại...");
                     if (++failures >= MaxBuyFailures) return Fail(0, $"Mua thất bại {MaxBuyFailures} lần liên tiếp. Dừng.");
-                    await Pacing.Wait(3, 6, pace, ct);
+                    await Pacing.Wait(4, 8, pace, ct);
                     continue;
                 }
                 failures = 0;
@@ -139,7 +139,7 @@ public sealed class UpgradeRunner
                 spent += cheapest.Price;
                 _progress(bought, plan.Quantity, $"Đã mua {bought}/{plan.Quantity} thẻ +1");
                 _log($"[Ép thẻ] Mua {bought}/{plan.Quantity}: giá {cheapest.Price:N0} (id …{Tail(buy.CardId!)})");
-                await Pacing.Wait(2.0, 4.5, pace, ct);
+                await Pacing.Wait(3.0, 6.0, pace, ct);
                 await Pacing.Think(pace, ct);
             }
             _log($"[Ép thẻ] Mua xong {bought} thẻ +1, tổng {spent:N0} EP.");

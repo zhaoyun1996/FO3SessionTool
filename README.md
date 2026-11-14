@@ -200,3 +200,10 @@ Nếu báo chưa có phiên hoặc phiên hết hạn: chạy lại bước 1 v�
 | `LocalPlayerDb.cs` | Đọc bảng cầu thủ từ `data\data_0.big` của game (dự phòng khi fifaaddict không có thẻ) |
 | `MainForm.cs`, `Theme.cs`, `Controls.cs` | Cửa sổ chính, giao diện tối, các control tự vẽ |
 | `capture/` | Script bắt gói bằng mitmproxy |
+
+## Tab "Mua cầu thủ"
+
+- Lọc theo mùa, vị trí, chỉ số (tổng / dứt điểm / tốc độ / sức mạnh / rê bóng / thể lực, dữ liệu đọc từ file game) hoặc tìm theo tên.
+- **Mua thủ công**: chọn dòng, mua thẻ rẻ nhất của từng cầu thủ một lần.
+- **Mua tự động**: mỗi cầu thủ chọn = một luồng chạy song song; dừng khi EP xuống dưới mức đặt, đủ số thẻ, hết kho hoặc bấm Dừng.
+- Các khoảng chờ giữa các lần mua (cả ở tab Ép thẻ) đã tăng lên để giảm lỗi mua.

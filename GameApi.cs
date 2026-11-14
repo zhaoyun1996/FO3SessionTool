@@ -284,7 +284,7 @@ public sealed class GameApi
     /// <summary>Lineup group of an owned card: 0 = starting XI, 1 = substitutes, 2 = not registered.</summary>
     public const int GroupStarter = 0, GroupBench = 1, GroupNone = 2;
     private const int BenchSlot = 28;   // squad.positions[].pos of the substitutes
-    public sealed record BuyResult(bool Ok, string? CardId, string Raw);
+    public sealed record BuyResult(bool Ok, string? CardId, string Raw, bool HadMoney = false);
 
     /// <summary>The server's answer when the card storage has no free slot: {"result":false,"reason":"Exceed plyer limit"} (sic).</summary>
     public static bool IsStorageFull(string raw) =>
@@ -303,7 +303,7 @@ public sealed class GameApi
         var text = await resp.Content.ReadAsStringAsync(ct);
         var r = ParseBuy(text);
         LastHadMoney = r.Ok && ApplyMoney(text);
-        return r with { Ok = r.Ok && resp.IsSuccessStatusCode, Raw = resp.IsSuccessStatusCode ? text : $"HTTP {(int)resp.StatusCode}: {text}" };
+        return r with { Ok = r.Ok && resp.IsSuccessStatusCode, Raw = resp.IsSuccessStatusCode ? text : $"HTTP {(int)resp.StatusCode}: {text}", HadMoney = LastHadMoney };
     }
 
     public async Task<EnhancePreview> EnhancePreviewAsync(string mainId, string materialId, CancellationToken ct = default)

@@ -273,7 +273,7 @@ public sealed class CycleRunner
         _buyBlock = ""; _buyBlockedEp = false;
 
         _step(0, StepState.Running);
-        await Pacing.Wait(0.8, 2.0, pace, tok);
+        await Pacing.Wait(1.5, 3.0, pace, tok);
         var buy = await _api.BuyAsync(plan.Spid, 1, cheapest.Price, tok);
         if (!buy.Ok && GameApi.IsStorageFull(buy.Raw))
         {
@@ -300,7 +300,7 @@ public sealed class CycleRunner
                 Stop("Mua thất bại 5 lần liên tiếp và không còn gì để ép/đổi. Có thể kho cầu thủ đã đầy chỗ (hãy bán/xóa bớt cầu thủ không cần) hoặc server từ chối. Phản hồi cuối: " + GameApi.Trim(buy.Raw));
                 return;
             }
-            await Pacing.Wait(3, 6, pace, tok);
+            await Pacing.Wait(4, 8, pace, tok);
             return;
         }
         _buyFailures = 0; _waitFreeSince = null;
@@ -310,7 +310,7 @@ public sealed class CycleRunner
         Interlocked.Increment(ref _cardCount);
         Activity();
         _log($"[Xoay vòng/Mua] Mua thẻ +1 giá {cheapest.Price:N0} (id …{Tail(buy.CardId!)}); trong dây chuyền {Pipeline()}/{_cap} thẻ +1.");
-        await Pacing.Wait(2.0, 4.5, pace, tok);
+        await Pacing.Wait(3.0, 6.0, pace, tok);
         await Pacing.Think(pace, tok);
     }
 

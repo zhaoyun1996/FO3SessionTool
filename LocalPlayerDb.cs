@@ -10,7 +10,8 @@ namespace FO3SessionTool;
 /// </summary>
 public sealed class LocalPlayerDb
 {
-    public sealed record Row(long Spid, int Overall, int Potential, int[] Positions, int Foot, int WeakFoot, int SkillMoves, int Height, int Weight, int BirthDays, int Nation);
+    public sealed record Row(long Spid, int Overall, int Potential, int[] Positions, int Foot, int WeakFoot, int SkillMoves, int Height, int Weight, int BirthDays, int Nation,
+        int Finishing = 0, int Sprint = 0, int Strength = 0, int Dribbling = 0, int Stamina = 0);
 
     private readonly Dictionary<long, Row> _rows;
     private readonly Dictionary<long, string> _club;   // spid -> club (or special team such as "Europe Legend") name
@@ -19,6 +20,7 @@ public sealed class LocalPlayerDb
     /// <summary>The club the game files give the card (many cards, mostly newer seasons, have none), or "".</summary>
     public string ClubOf(long spid) => _club.TryGetValue(spid, out var c) ? c : "";
     public int Count => _rows.Count;
+    public IEnumerable<Row> All => _rows.Values;
     public Row? Find(long spid) => _rows.TryGetValue(spid, out var r) ? r : null;
 
     private Dictionary<long, List<Row>>? _byBase;
@@ -151,6 +153,7 @@ public sealed class LocalPlayerDb
         ("sNZW", 50),           // 11 weight
         ("WVIU", int.MinValue), // 12 birthdate (days since 1582-10-14)
         ("enmm", 0),            // 13 nationality id
+        ("xJZL", 1), ("NrcP", 1), ("nmgT", 1), ("nEbM", 1), ("XjDq", 1),   // 14..18 finishing, sprintspeed, strength, dribbling, stamina
     };
 
     private static uint U32(byte[] d, int o) => BitConverter.ToUInt32(d, o);
@@ -199,7 +202,8 @@ public sealed class LocalPlayerDb
             if (spid <= 0) continue;
             rows[spid] = new Row(spid, (int)Get(r, 1), (int)Get(r, 2),
                 new[] { (int)Get(r, 3), (int)Get(r, 4), (int)Get(r, 5), (int)Get(r, 6) }.Where(p => p >= 0).ToArray(),
-                (int)Get(r, 7), (int)Get(r, 8), (int)Get(r, 9), (int)Get(r, 10), (int)Get(r, 11), (int)Get(r, 12), (int)Get(r, 13));
+                (int)Get(r, 7), (int)Get(r, 8), (int)Get(r, 9), (int)Get(r, 10), (int)Get(r, 11), (int)Get(r, 12), (int)Get(r, 13),
+                (int)Get(r, 14), (int)Get(r, 15), (int)Get(r, 16), (int)Get(r, 17), (int)Get(r, 18));
         }
         return rows.Count > 1000 ? new LocalPlayerDb(rows, ReadClubs(d, tables, baseOff)) : null;
     }
@@ -258,13 +262,13 @@ public sealed class LocalPlayerDb
     }
 
     // ---- to the tool's own PlayerDetail ----------------------------------------------------------------------------------------
-    private static readonly string[] PosNames =
+    public static readonly string[] PosNames =
     {
         "GK", "SW", "RWB", "RB", "RCB", "CB", "LCB", "LB", "LWB", "RDM", "CDM", "LDM", "RM", "RCM", "CM", "LCM", "LM", "RAM", "CAM", "LAM",
         "RF", "CF", "LF", "RW", "RS", "ST", "LS", "LW",
     };
 
-    private static string PosGroup(int id) => id == 0 ? "gk" : id <= 8 ? "def" : id <= 19 ? "mid" : "att";
+    public static string PosGroup(int id) => id == 0 ? "gk" : id <= 8 ? "def" : id <= 19 ? "mid" : "att";
 
     /// <summary>Same shape the fifaaddict page gives. Missing in the game files: name (use the card's jersey name), nation, club.</summary>
     public PlayerDetail ToDetail(Row r, string name = "", string club = "")
