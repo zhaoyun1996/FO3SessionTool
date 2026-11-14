@@ -151,6 +151,7 @@ public sealed class BuyTab : UserControl
         Col("season", "Mùa", 55);
         Col("pos", "Vị trí", 60);
         Col("stat", "Chỉ số lọc", 85);
+        Col("club", "CLB", 160, false, DataGridViewContentAlignment.MiddleLeft);
         Col("spid", "SPID", 90);
     }
 
@@ -238,9 +239,10 @@ public sealed class BuyTab : UserControl
     private void Fill(List<Item> items)
     {
         _grid.Rows.Clear();
+        _grid.Columns["stat"].HeaderText = _stat.SelectedIndex == 0 ? "Chỉ số tổng" : (string)_stat.SelectedItem!;
         foreach (var it in items)
         {
-            int i = _grid.Rows.Add(_picked.Contains(it.Spid) ? "✔" : "", it.Name.Length > 0 ? it.Name : "(SPID " + it.Spid + ")", it.Season, it.Pos, it.Stat, it.Spid);
+            int i = _grid.Rows.Add(_picked.Contains(it.Spid) ? "✔" : "", it.Name.Length > 0 ? it.Name : "(SPID " + it.Spid + ")", it.Season, it.Pos, it.Stat, it.Club, it.Spid);
             _grid.Rows[i].Tag = it;
         }
         _status.Text = $"{items.Count} cầu thủ" + (items.Count >= MaxRows ? $" (hiện {MaxRows} đầu tiên, hãy lọc thêm)" : "") + ". Bấm vào dòng để chọn nhiều cầu thủ rồi mua.";
