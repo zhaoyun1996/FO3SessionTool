@@ -19,7 +19,6 @@ public sealed class BuyTab : UserControl
     private readonly DarkTextBox _name = new() { PlaceholderText = "Tên cầu thủ (để trống = lọc theo dữ liệu game)", Anchor = AnchorStyles.Left | AnchorStyles.Right };
     private readonly DarkCombo _season = new() { DropDownStyle = ComboBoxStyle.DropDownList, Anchor = AnchorStyles.Left, Width = 100 };
     private readonly DarkCombo _pos = new() { DropDownStyle = ComboBoxStyle.DropDownList, Anchor = AnchorStyles.Left, Width = 120 };
-    private readonly DarkCombo _stat = new() { DropDownStyle = ComboBoxStyle.DropDownList, Anchor = AnchorStyles.Left, Width = 120 };
     private readonly DarkNumber _statMin = new() { Minimum = 0, Maximum = 200, Value = 0, Width = 70, Anchor = AnchorStyles.Left };
     private readonly DarkButton _btnFind = new() { Text = "Lọc / Tìm", Width = 110, Anchor = AnchorStyles.Left };
     private readonly DataGridView _grid = new();
@@ -49,9 +48,8 @@ public sealed class BuyTab : UserControl
 
         _season.Items.Add("Mọi mùa");
         _pos.Items.AddRange(new object[] { "Mọi vị trí", "Thủ môn", "Hậu vệ", "Tiền vệ", "Tiền đạo" });
-        _stat.Items.AddRange(new object[] { "Chỉ số tổng", "Dứt điểm", "Tốc độ chạy", "Sức mạnh", "Rê bóng", "Thể lực" });
         _pace.Items.AddRange(new object[] { "Chậm (×1.8)", "Bình thường", "Nhanh (×0.5)" });
-        _season.SelectedIndex = 0; _pos.SelectedIndex = 0; _stat.SelectedIndex = 0; _pace.SelectedIndex = 0;
+        _season.SelectedIndex = 0; _pos.SelectedIndex = 0; _pace.SelectedIndex = 0;
         _floorEp.Value = 0; _maxPrice.Value = 0; _maxCards.Value = 0;
 
         var filters = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = false, Padding = new Padding(0, 0, 0, 4) };
@@ -60,9 +58,7 @@ public sealed class BuyTab : UserControl
         Add(_season);
         Add(new Label { Text = "Vị trí", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(8, 0, 3, 0) });
         Add(_pos);
-        Add(new Label { Text = "Chỉ số", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(8, 0, 3, 0) });
-        Add(_stat);
-        Add(new Label { Text = "tối thiểu", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(3, 0, 3, 0) });
+        Add(new Label { Text = "Tổng tối thiểu", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(8, 0, 3, 0) });
         Add(_statMin);
         _btnFind.Margin = new Padding(12, 3, 3, 3); filters.Controls.Add(_btnFind);
 
@@ -104,14 +100,29 @@ public sealed class BuyTab : UserControl
         {
             if (e.RowIndex < 0 || _grid.Rows[e.RowIndex].Tag is not Item it) return;
             if (!_picked.Remove(it.Spid)) _picked.Add(it.Spid);
-            _grid.Rows[e.RowIndex].Cells["pick"].Value = _picked.Contains(it.Spid) ? "✔" : "";
+            _grid.InvalidateCell(0, e.RowIndex);
             UpdateUi();
         };
         _grid.CellPainting += (_, e) =>
         {
-            if (e.RowIndex < 0 || e.ColumnIndex < 0 || _grid.Columns[e.ColumnIndex].Name != "season" || _grid.Rows[e.RowIndex].Tag is not Item it) return;
+            if (e.RowIndex < 0 || e.ColumnIndex < 0 || _grid.Rows[e.RowIndex].Tag is not Item it) return;
+            var cn = _grid.Columns[e.ColumnIndex].Name;
+            if (cn != "season" && cn != "pick") return;
             e.PaintBackground(e.CellBounds, (e.State & DataGridViewElementStates.Selected) != 0);
             var g = e.Graphics!; var b = e.CellBounds;
+            if (cn == "pick")
+            {
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                var box = new Rectangle(b.X + (b.Width - 16) / 2, b.Y + (b.Height - 16) / 2, 16, 16);
+                bool on = _picked.Contains(it.Spid);
+                using (var br = new SolidBrush(on ? Theme.Accent : Theme.Surface2)) g.FillRectangle(br, box);
+                using (var pen = new Pen(on ? Theme.Accent : Theme.Border)) g.DrawRectangle(pen, box);
+                if (on)
+                    using (var pen = new Pen(Color.White, 2f) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round })
+                        g.DrawLines(pen, new[] { new Point(box.X + 3, box.Y + 8), new Point(box.X + 7, box.Y + 12), new Point(box.X + 13, box.Y + 4) });
+                e.Handled = true;
+                return;
+            }
             var r = new Rectangle(b.X + (b.Width - 20) / 2, b.Y + (b.Height - 20) / 2, 20, 20);
             g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
             if (_icons != null && PlayerSearch.SeasonSpriteX.TryGetValue(it.Season, out var sx))
@@ -122,10 +133,7 @@ public sealed class BuyTab : UserControl
             else SeasonArt.Badge(g, r, it.Season);
             e.Handled = true;
         };
-        _grid.CellFormatting += (_, e) =>
-        {
-            if (e.RowIndex >= 0 && _grid.Columns[e.ColumnIndex].Name == "pick") { e.CellStyle!.ForeColor = Theme.Accent; e.CellStyle.Font = Theme.Bold; }
-        };
+
         UpdateUi();
     }
 
@@ -150,8 +158,8 @@ public sealed class BuyTab : UserControl
         Col("name", "Cầu thủ", 200, true, DataGridViewContentAlignment.MiddleLeft);
         Col("season", "Mùa", 55);
         Col("pos", "Vị trí", 60);
-        Col("stat", "Chỉ số lọc", 85);
-        Col("club", "CLB", 160, false, DataGridViewContentAlignment.MiddleLeft);
+        Col("ovr", "Tổng", 60);
+        Col("club", "CLB / Mùa", 170, false, DataGridViewContentAlignment.MiddleLeft);
         Col("spid", "SPID", 90);
     }
 
@@ -172,10 +180,7 @@ public sealed class BuyTab : UserControl
 
     private int SelSeason => _season.SelectedIndex <= 0 ? -1 : int.Parse(((string)_season.SelectedItem!).Substring(4));
 
-    private int StatOf(LocalPlayerDb.Row r) => _stat.SelectedIndex switch
-    {
-        1 => r.Finishing, 2 => r.Sprint, 3 => r.Strength, 4 => r.Dribbling, 5 => r.Stamina, _ => r.Overall + PlayerSearch.StatBonus,
-    };
+    private static int StatOf(LocalPlayerDb.Row r) => r.Overall + PlayerSearch.StatBonus;
 
     private bool Match(LocalPlayerDb.Row r)
     {
@@ -214,7 +219,7 @@ public sealed class BuyTab : UserControl
                     else
                     {
                         if (SelSeason >= 0 && p.Season != SelSeason) continue;
-                        if (_stat.SelectedIndex == 0 && p.Overall < (int)_statMin.Value) continue;
+                        if (p.Overall < (int)_statMin.Value) continue;
                         items.Add(new Item(p.Spid, p.Name, p.Season, p.Position, p.Overall, p.Overall, ""));
                     }
                 }
@@ -236,13 +241,14 @@ public sealed class BuyTab : UserControl
         finally { _btnFind.Enabled = true; }
     }
 
+    private string ClubText(Item it) => it.Club.Length > 0 ? it.Club : _players.SeasonLabelOf(it.Season);
+
     private void Fill(List<Item> items)
     {
         _grid.Rows.Clear();
-        _grid.Columns["stat"].HeaderText = _stat.SelectedIndex == 0 ? "Chỉ số tổng" : (string)_stat.SelectedItem!;
         foreach (var it in items)
         {
-            int i = _grid.Rows.Add(_picked.Contains(it.Spid) ? "✔" : "", it.Name.Length > 0 ? it.Name : "(SPID " + it.Spid + ")", it.Season, it.Pos, it.Stat, it.Club, it.Spid);
+            int i = _grid.Rows.Add("", it.Name.Length > 0 ? it.Name : "(SPID " + it.Spid + ")", it.Season, it.Pos, it.Stat, ClubText(it), it.Spid);
             _grid.Rows[i].Tag = it;
         }
         _status.Text = $"{items.Count} cầu thủ" + (items.Count >= MaxRows ? $" (hiện {MaxRows} đầu tiên, hãy lọc thêm)" : "") + ". Bấm vào dòng để chọn nhiều cầu thủ rồi mua.";
@@ -262,7 +268,7 @@ public sealed class BuyTab : UserControl
                 BeginInvoke(() =>
                 {
                     foreach (DataGridViewRow row in _grid.Rows)
-                        if (row.Tag is Item x && x.Spid == it.Spid) { row.Cells["name"].Value = d.Name; row.Tag = x with { Name = d.Name }; }
+                        if (row.Tag is Item x && x.Spid == it.Spid) { { row.Cells["name"].Value = d.Name; row.Tag = x with { Name = d.Name }; if (x.Club.Length == 0 && d.SeasonLabel.Length > 0) row.Cells["club"].Value = d.SeasonLabel; } }
                 });
             }
             catch { }

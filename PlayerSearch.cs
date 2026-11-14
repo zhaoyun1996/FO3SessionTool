@@ -196,6 +196,7 @@ public sealed class PlayerSearch : IDisposable
     private static string LearnedPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "FO3SessionTool", "learned.json");
     private sealed class Learned { public Dictionary<int, string[]> Nations { get; set; } = new(); public Dictionary<int, string> Seasons { get; set; } = new(); }
     private bool _learnedLoaded;
+    public string SeasonLabelOf(int season) { LoadLearned(); return _seasonLabels.TryGetValue(season, out var l) ? l : ""; }
     private readonly object _learnLock = new();
 
     private void LoadLearned()
