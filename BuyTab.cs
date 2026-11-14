@@ -21,7 +21,7 @@ public sealed class BuyTab : UserControl
     private readonly DarkCombo _pos = new() { DropDownStyle = ComboBoxStyle.DropDownList, Anchor = AnchorStyles.Left, Width = 120 };
     private readonly DarkTextBox _ovrFrom = new() { PlaceholderText = "từ", Width = 64, Anchor = AnchorStyles.Left };
     private readonly DarkTextBox _ovrTo = new() { PlaceholderText = "đến", Width = 64, Anchor = AnchorStyles.Left };
-    private readonly DarkButton _btnFind = new() { Text = "Lọc / Tìm", Width = 110, Anchor = AnchorStyles.Left };
+    private readonly DarkButton _btnFind = new() { Text = "Tìm kiếm", Width = 110, Anchor = AnchorStyles.Left };
     private readonly DataGridView _grid = new();
     private readonly Label _status = new() { AutoSize = true, ForeColor = Theme.Dim, Anchor = AnchorStyles.Left };
 
@@ -201,7 +201,7 @@ public sealed class BuyTab : UserControl
         if (_db != null) return;
         _db = await LocalPlayerDb.GetAsync(null);
         if (_db == null) return;
-        var seasons = _db.All.Select(r => (int)(r.Spid / 1_000_000)).Distinct().OrderBy(x => x).ToList();
+        var seasons = _db.All.Select(r => (int)(r.Spid / 1_000_000)).Where(x => x > 0).Distinct().OrderBy(x => x).ToList();
         var keep = _season.SelectedIndex;
         _season.Items.Clear();
         _season.Items.Add("Mọi mùa");
@@ -235,8 +235,12 @@ public sealed class BuyTab : UserControl
     private static string PosName(LocalPlayerDb.Row r)
         => r.Positions.Length > 0 && r.Positions[0] < LocalPlayerDb.PosNames.Length ? LocalPlayerDb.PosNames[r.Positions[0]] : "";
 
+    private string? _lastFilter;
+    private string FilterKey() => $"{_name.Text.Trim().ToLowerInvariant()}|{SelSeason}|{_pos.SelectedIndex}|{_ovrFrom.Text.Trim()}|{_ovrTo.Text.Trim()}";
+
     private async Task FindAsync()
     {
+        if (_lastFilter == FilterKey()) return;   // same filters as the last search: nothing to do
         int ver = ++_ver;
         _btnFind.Enabled = false;
         try
@@ -271,6 +275,8 @@ public sealed class BuyTab : UserControl
                     items.Add(new Item(r.Spid, "", (int)(r.Spid / 1_000_000), PosName(r), r.Overall + PlayerSearch.StatBonus, StatOf(r), _db.ClubOf(r.Spid)));
             }
             if (ver != _ver) return;
+            _picked.Clear();   // filters changed: start with nothing ticked
+            _lastFilter = FilterKey();
             Fill(items);
             // names of the local rows: fill in from the cache / siblings, a few at a time, without blocking the UI
             _ = FillNamesAsync(items, ver);
