@@ -234,6 +234,7 @@ public sealed class BuyTab : UserControl
     private bool Match(LocalPlayerDb.Row r)
     {
         int s = SelSeason;
+        if (r.Spid / 1_000_000 == 0) return false;   // season 0 (base cards) is never offered
         if (s >= 0 && r.Spid / 1_000_000 != s) return false;
         if (_pos.SelectedIndex > 0)
         {
@@ -267,6 +268,7 @@ public sealed class BuyTab : UserControl
                 if (ver != _ver) return;
                 foreach (var p in found)
                 {
+                    if (p.Season == 0 || p.Spid / 1_000_000 == 0) continue;
                     var r = _db?.Find(p.Spid);
                     if (r != null) { if (!Match(r)) continue; items.Add(new Item(p.Spid, p.Name, p.Season, p.Position, p.Overall, StatOf(r), _db!.ClubOf(p.Spid))); }
                     else
