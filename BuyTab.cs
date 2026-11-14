@@ -16,8 +16,8 @@ public sealed class BuyTab : UserControl
     private readonly Func<bool> _otherBusy;
     private readonly Action<string> _log;
 
-    private readonly DarkTextBox _name = new() { PlaceholderText = "Tên cầu thủ (để trống = lọc theo dữ liệu game)", Anchor = AnchorStyles.Left | AnchorStyles.Right };
-    private readonly DarkCombo _season = new() { DropDownStyle = ComboBoxStyle.DropDownList, Anchor = AnchorStyles.Left, Width = 230, DropDownWidth = 300, CustomItems = true };
+    private readonly DarkTextBox _name = new() { PlaceholderText = "Tên cầu thủ (có thể để trống, khi đó tìm theo các tiêu chí bên dưới)", Anchor = AnchorStyles.Left | AnchorStyles.Right };
+    private readonly DarkCombo _season = new() { DropDownStyle = ComboBoxStyle.DropDownList, Anchor = AnchorStyles.Left, Width = 210, DropDownWidth = 300, CustomItems = true };
     private readonly DarkCombo _pos = new() { DropDownStyle = ComboBoxStyle.DropDownList, Anchor = AnchorStyles.Left, Width = 120 };
     private readonly DarkTextBox _ovrFrom = new() { PlaceholderText = "từ", Width = 64, Anchor = AnchorStyles.Left };
     private readonly DarkTextBox _ovrTo = new() { PlaceholderText = "đến", Width = 64, Anchor = AnchorStyles.Left };
@@ -30,9 +30,11 @@ public sealed class BuyTab : UserControl
     private readonly DarkNumber _floorEp = new() { Minimum = 0, Maximum = 1_000_000_000_000M, ThousandsSeparator = true, Increment = 100_000, Width = 150, Anchor = AnchorStyles.Left };
     private readonly DarkNumber _maxPrice = new() { Minimum = 0, Maximum = 1_000_000_000_000M, ThousandsSeparator = true, Increment = 1000, Width = 150, Anchor = AnchorStyles.Left };
     private readonly DarkNumber _maxCards = new() { Minimum = 0, Maximum = 200, Width = 70, Anchor = AnchorStyles.Left };
-    private readonly DarkCheck _anyGrade = new() { Text = "Mua cả thẻ trên +1", Anchor = AnchorStyles.Left };
-    private readonly DarkCombo _pace = new() { DropDownStyle = ComboBoxStyle.DropDownList, Anchor = AnchorStyles.Left, Width = 150 };
-    private static readonly double[] PaceFactor = { 1.8, 1.0, 0.5 };
+    private readonly DarkCombo _gFrom = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 80 };
+    private readonly DarkCombo _gTo = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 80 };
+    private bool _gSync;
+    private readonly DarkCombo _pace = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 190 };
+    private static readonly double[] PaceFactor = { 1.8, 1.0, 0.5, 0.25 };
 
     private readonly HashSet<long> _picked = new();
     private LocalPlayerDb? _db;
@@ -49,7 +51,11 @@ public sealed class BuyTab : UserControl
 
         _season.Items.Add("Mọi mùa");
         _pos.Items.AddRange(new object[] { "Mọi vị trí", "Thủ môn", "Hậu vệ", "Tiền vệ", "Tiền đạo" });
-        _pace.Items.AddRange(new object[] { "Chậm (×1.8)", "Bình thường", "Nhanh (×0.5)" });
+        _pace.Items.AddRange(new object[] { "Chậm (×1.8)", "Bình thường", "Nhanh (×0.5)", "Rất nhanh (×0.25)" });
+        for (int g = 1; g <= 13; g++) { _gFrom.Items.Add("+" + g); _gTo.Items.Add("+" + g); }
+        _gFrom.SelectedIndex = 0; _gTo.SelectedIndex = 0;
+        _gFrom.SelectedIndexChanged += (_, _) => { if (_gSync) return; _gSync = true; if (_gTo.SelectedIndex < _gFrom.SelectedIndex) _gTo.SelectedIndex = _gFrom.SelectedIndex; _gSync = false; };
+        _gTo.SelectedIndexChanged += (_, _) => { if (_gSync) return; _gSync = true; if (_gFrom.SelectedIndex > _gTo.SelectedIndex) _gFrom.SelectedIndex = _gTo.SelectedIndex; _gSync = false; };
         _season.SelectedIndex = 0; _pos.SelectedIndex = 0; _pace.SelectedIndex = 0;
         _floorEp.Value = 0; _maxPrice.Value = 0; _maxCards.Value = 0;
 
@@ -73,24 +79,29 @@ public sealed class BuyTab : UserControl
 
         StyleGrid();
 
-        var opts = new FlowLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true, WrapContents = true, Padding = new Padding(0, 4, 0, 0) };
-        void O(Control c, int left = 3) { if (c is not Label) c.Margin = new Padding(left, 3, 3, 3); opts.Controls.Add(c); }
-        O(new Label { Text = "Dừng khi EP dưới", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(3, 0, 3, 0) });
-        O(_floorEp);
-        O(new Label { Text = "Giá tối đa/thẻ (0 = không)", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(10, 0, 3, 0) });
-        O(_maxPrice);
-        O(new Label { Text = "Tối đa số thẻ (0 = không)", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(10, 0, 3, 0) });
-        O(_maxCards);
-        O(_anyGrade, 10);
-        O(new Label { Text = "Tốc độ", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(10, 0, 3, 0) });
-        O(_pace);
-        var btns = new FlowLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true, WrapContents = false, Padding = new Padding(0, 2, 0, 0) };
-        _btnBuyOnce.Margin = new Padding(3); _btnAuto.Margin = new Padding(3); _status.Anchor = AnchorStyles.Left; _status.Margin = new Padding(12, 0, 3, 0);
-        btns.Controls.Add(_btnBuyOnce); btns.Controls.Add(_btnAuto); btns.Controls.Add(_status);
+        // options on the right of the table, one per row
+        var side = new FlowLayoutPanel { Dock = DockStyle.Right, Width = 270, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(10, 0, 0, 0) };
+        void L(string t, int top = 6) => side.Controls.Add(new Label { Text = t, AutoSize = true, Margin = new Padding(3, top, 3, 2) });
+        void C(Control c) { c.Margin = new Padding(3, 0, 3, 0); side.Controls.Add(c); }
+        L("Dừng khi EP dưới", 0); _floorEp.Width = 240; C(_floorEp);
+        L("Giá tối đa/thẻ (0 = không giới hạn)"); _maxPrice.Width = 240; C(_maxPrice);
+        L("Tối đa số thẻ (0 = không giới hạn)"); _maxCards.Width = 240; C(_maxCards);
+        L("Thẻ cộng");
+        var grade = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0) };
+        grade.Controls.Add(new Label { Text = "từ", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(3, 0, 3, 0) });
+        _gFrom.Margin = new Padding(3, 0, 8, 0); grade.Controls.Add(_gFrom);
+        grade.Controls.Add(new Label { Text = "đến", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(3, 0, 3, 0) });
+        _gTo.Margin = new Padding(3, 0, 3, 0); grade.Controls.Add(_gTo);
+        side.Controls.Add(grade);
+        L("Tốc độ"); C(_pace);
+        _btnBuyOnce.Width = 240; _btnAuto.Width = 240;
+        _btnBuyOnce.Margin = new Padding(3, 16, 3, 0); _btnAuto.Margin = new Padding(3, 8, 3, 0);
+        side.Controls.Add(_btnBuyOnce); side.Controls.Add(_btnAuto);
+        _status.MaximumSize = new Size(250, 0); _status.Margin = new Padding(3, 10, 3, 0);
+        side.Controls.Add(_status);
 
         Controls.Add(_grid);
-        Controls.Add(opts);
-        Controls.Add(btns);
+        Controls.Add(side);
         Controls.Add(filters);
         Controls.Add(nameRow);
         _grid.BringToFront();
@@ -269,8 +280,6 @@ public sealed class BuyTab : UserControl
             else
             {
                 if (_db == null) { _status.Text = "Chưa đọc được dữ liệu game (Config gameDir). Hãy nhập tên cầu thủ để tìm."; return; }
-                bool filtered = SelSeason >= 0 || _pos.SelectedIndex > 0 || OvrFrom > 0 || OvrTo < int.MaxValue;
-                if (!filtered) { _status.Text = "Chọn ít nhất một điều kiện (mùa / vị trí / chỉ số) hoặc nhập tên."; return; }
                 foreach (var r in _db.All.Where(Match).OrderByDescending(StatOf).ThenBy(r => r.Spid).Take(MaxRows))
                     items.Add(new Item(r.Spid, "", (int)(r.Spid / 1_000_000), PosName(r), r.Overall + PlayerSearch.StatBonus, StatOf(r), _db.ClubOf(r.Spid)));
             }
@@ -335,7 +344,7 @@ public sealed class BuyTab : UserControl
         _btnFind.Enabled = true;
     }
 
-    private BuyOptions Options() => new((long)_floorEp.Value, (long)_maxPrice.Value, _anyGrade.Checked, (int)_maxCards.Value,
+    private BuyOptions Options() => new((long)_floorEp.Value, (long)_maxPrice.Value, _gFrom.SelectedIndex + 1, _gTo.SelectedIndex + 1, (int)_maxCards.Value,
         PaceFactor[Math.Clamp(_pace.SelectedIndex, 0, PaceFactor.Length - 1)]);
 
     private async Task BuyOnceAsync()

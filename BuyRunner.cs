@@ -4,10 +4,9 @@ namespace FO3SessionTool;
 public sealed record BuyTarget(long Spid, string Name);
 
 /// <summary>
-/// StopBelowEp: never spend EP below this balance. MaxPrice: highest price paid for one card (0 = no cap). AnyGrade: buy a card of any level,
-/// otherwise only +1. MaxCards: stop after this many purchases (0 = until EP or Stop). Pace: multiplier of the human-like waits.
+/// StopBelowEp: never spend EP below this balance. MaxPrice: highest price paid for one card (0 = no cap). MinGrade..MaxGrade: card levels to buy (+1..+1 by default). MaxCards: stop after this many purchases (0 = until EP or Stop). Pace: multiplier of the human-like waits.
 /// </summary>
-public sealed record BuyOptions(long StopBelowEp = 0, long MaxPrice = 0, bool AnyGrade = false, int MaxCards = 0, double Pace = 1.0);
+public sealed record BuyOptions(long StopBelowEp = 0, long MaxPrice = 0, int MinGrade = 1, int MaxGrade = 1, int MaxCards = 0, double Pace = 1.0);
 
 public sealed record BuyProgress(int Bought, long Spent, long Ep, int Workers);
 
@@ -59,7 +58,7 @@ public sealed class BuyRunner
         long ep0 = _api.LastWallet?.Ep ?? 0;
         _log($"[Mua] Bắt đầu: {targets.Count} cầu thủ = {targets.Count} luồng mua song song. EP {ep0:N0}, dừng khi EP xuống dưới {opt.StopBelowEp:N0}" +
              (opt.MaxPrice > 0 ? $", giá tối đa {opt.MaxPrice:N0}/thẻ" : "") + (opt.MaxCards > 0 ? $", tối đa {opt.MaxCards} thẻ" : "") +
-             (opt.AnyGrade ? ", mọi mức thẻ." : ", chỉ thẻ +1."));
+             ($", thẻ +{opt.MinGrade} đến +{opt.MaxGrade}."));
         if (ep0 <= opt.StopBelowEp && ep0 > 0)
             return $"EP hiện có ({ep0:N0}) đã không cao hơn mức dừng ({opt.StopBelowEp:N0}), không mua gì.";
 
@@ -96,7 +95,7 @@ public sealed class BuyRunner
                     continue;
                 }
 
-                var offer = list.Where(l => (opt.AnyGrade || l.Grade == 1) && l.Price > 0 && (opt.MaxPrice <= 0 || l.Price <= opt.MaxPrice))
+                var offer = list.Where(l => (l.Grade >= opt.MinGrade && l.Grade <= opt.MaxGrade) && l.Price > 0 && (opt.MaxPrice <= 0 || l.Price <= opt.MaxPrice))
                                 .OrderBy(l => l.Price).ThenBy(l => l.Grade).FirstOrDefault();
                 if (offer == null)
                 {
@@ -163,7 +162,7 @@ public sealed class BuyRunner
     public static async Task<(bool Ok, string Message, long Price)> BuyCheapestAsync(GameApi api, long spid, string label, BuyOptions opt, CancellationToken ct)
     {
         var list = await api.SearchAsync(spid, ct);
-        var offer = list.Where(l => (opt.AnyGrade || l.Grade == 1) && l.Price > 0 && (opt.MaxPrice <= 0 || l.Price <= opt.MaxPrice))
+        var offer = list.Where(l => (l.Grade >= opt.MinGrade && l.Grade <= opt.MaxGrade) && l.Price > 0 && (opt.MaxPrice <= 0 || l.Price <= opt.MaxPrice))
                         .OrderBy(l => l.Price).ThenBy(l => l.Grade).FirstOrDefault();
         if (offer == null) return (false, $"{label}: chưa có thẻ phù hợp trên chợ.", 0);
         long ep = api.LastWallet?.Ep ?? 0;
