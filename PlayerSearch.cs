@@ -50,7 +50,7 @@ public sealed class PlayerSearch : IDisposable
     {
         var url = "https://en.fifaaddict.com/fo3db.php?q=player&name=" + Uri.EscapeDataString(name);
         var html = await _http.GetStringAsync(url, ct);
-        return Parse(html);
+        return Parse(html).Where(p => p.Season != 0 && p.Spid / 1_000_000 != 0).ToList();   // season 0 (base cards) is never offered
     }
 
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, Task<Image?>> _imageCache = new();
