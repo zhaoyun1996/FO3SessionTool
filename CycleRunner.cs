@@ -275,6 +275,12 @@ public sealed class CycleRunner
         _step(0, StepState.Running);
         await Pacing.Wait(0.8, 2.0, pace, tok);
         var buy = await _api.BuyAsync(plan.Spid, 1, cheapest.Price, tok);
+        if (!buy.Ok && GameApi.IsStorageFull(buy.Raw))
+        {
+            _step(0, StepState.Error);
+            Stop("Hết kho: kho cầu thủ đã đầy (server báo \"Exceed plyer limit\"). Hãy bán/xóa bớt cầu thủ trong kho rồi chạy lại.");
+            return;
+        }
         if (!buy.Ok)
         {
             _log($"[Xoay vòng/Mua] Mua thất bại ({GameApi.Trim(buy.Raw)}), thử lại...");

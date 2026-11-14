@@ -285,6 +285,10 @@ public sealed class GameApi
     public const int GroupStarter = 0, GroupBench = 1, GroupNone = 2;
     private const int BenchSlot = 28;   // squad.positions[].pos of the substitutes
     public sealed record BuyResult(bool Ok, string? CardId, string Raw);
+
+    /// <summary>The server's answer when the card storage has no free slot: {"result":false,"reason":"Exceed plyer limit"} (sic).</summary>
+    public static bool IsStorageFull(string raw) =>
+        raw.Contains("Exceed", StringComparison.OrdinalIgnoreCase) && raw.Contains("limit", StringComparison.OrdinalIgnoreCase);
     public sealed record EnhancePreview(int Grade, long Price, int Probability, long EnhancePay, int NeedEs, string Raw);
     public sealed record EnhanceResult(bool Ok, bool Success, int ResultGrade, string Raw);
 

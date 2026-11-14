@@ -54,7 +54,7 @@ public sealed class UpgradeTab : UserControl
     private TableLayoutPanel _buyGrid = null!;
     private readonly Label _tradeMinLabel = new() { Text = "Đổi khi từ (EP)", AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Margin = new Padding(3, 0, 8, 0), Visible = false };
     private readonly DarkCombo _pace = new() { DropDownStyle = ComboBoxStyle.DropDownList, Anchor = AnchorStyles.Left | AnchorStyles.Right };
-    private static readonly double[] PaceFactor = { 1.8, 1.0, 0.5 };
+    private static readonly double[] PaceFactor = { 1.8, 1.0, 0.5, 0.25 };
 
     // storage snapshot of the picked player (cards not in the lineup), index = grade
 
@@ -113,7 +113,7 @@ public sealed class UpgradeTab : UserControl
         root.SetColumnSpan(bottom, 2);
         Controls.Add(root);
 
-        _pace.Items.AddRange(new object[] { "Chậm, thong thả (×1.8)", "Bình thường (×1)", "Nhanh (×0.5)" });
+        _pace.Items.AddRange(new object[] { "Chậm, thong thả (×1.8)", "Bình thường (×1)", "Nhanh (×0.5)", "Rất nhanh (×0.25)" });
         _pace.SelectedIndex = 1;
         ResetRules();
 

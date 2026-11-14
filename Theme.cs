@@ -60,7 +60,7 @@ public static class Theme
             case Form f:
                 f.BackColor = Bg; f.ForeColor = Text; f.Font = Body; DarkTitleBar(f);
                 break;
-            case DarkTabControl or DarkGroup or DarkProgress or DarkRadio or PlayerCard or DarkButton or DarkTextBox or DarkNumber or DarkCombo:
+            case DarkTabControl or DarkGroup or DarkProgress or DarkRadio or DarkCheck or PlayerCard or DarkButton or DarkTextBox or DarkNumber or DarkCombo:
                 break;   // paint themselves
             case TabPage p:
                 p.BackColor = Bg; p.ForeColor = Text; p.UseVisualStyleBackColor = false;
@@ -278,6 +278,40 @@ public sealed class DarkRadio : RadioButton
         var ring = new Rectangle(1, (Height - 16) / 2, 16, 16);
         using (var pen = new Pen(Checked ? Theme.Accent : Theme.Dim, 1.5f)) g.DrawEllipse(pen, ring);
         if (Checked) using (var br = new SolidBrush(Theme.Accent)) g.FillEllipse(br, ring.X + 4, ring.Y + 4, 8, 8);
+        TextRenderer.DrawText(g, Text, Font, new Point(24, (Height - Font.Height) / 2), Enabled ? Theme.Text : Theme.Dim, TextFormatFlags.NoPadding);
+    }
+}
+
+/// <summary>Check box drawn in the palette (square box with a tick), same look as the tick boxes of the grids.</summary>
+public sealed class DarkCheck : CheckBox
+{
+    public DarkCheck()
+    {
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
+        AutoSize = false;
+        Cursor = Cursors.Hand;
+        Font = Theme.Body;
+    }
+
+    public override Size GetPreferredSize(Size proposedSize)
+    {
+        var t = TextRenderer.MeasureText(Text, Font, new Size(int.MaxValue, 0), TextFormatFlags.NoPadding);
+        return new Size(t.Width + 30, 24);
+    }
+
+    protected override void OnTextChanged(EventArgs e) { base.OnTextChanged(e); Size = GetPreferredSize(Size.Empty); }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = e.Graphics;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        g.Clear(Parent?.BackColor == Color.Transparent || Parent == null ? Theme.Surface : Parent.BackColor);
+        var box = new Rectangle(1, (Height - 16) / 2, 16, 16);
+        using (var br = new SolidBrush(Checked ? Theme.Accent : Theme.Surface2)) g.FillRectangle(br, box);
+        using (var pen = new Pen(Checked ? Theme.Accent : Theme.Dim)) g.DrawRectangle(pen, box);
+        if (Checked)
+            using (var pen = new Pen(Color.White, 2f) { StartCap = LineCap.Round, EndCap = LineCap.Round })
+                g.DrawLines(pen, new[] { new Point(box.X + 3, box.Y + 8), new Point(box.X + 7, box.Y + 12), new Point(box.X + 13, box.Y + 4) });
         TextRenderer.DrawText(g, Text, Font, new Point(24, (Height - Font.Height) / 2), Enabled ? Theme.Text : Theme.Dim, TextFormatFlags.NoPadding);
     }
 }

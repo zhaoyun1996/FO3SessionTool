@@ -11,6 +11,7 @@ public sealed class KhoTab : UserControl
     private readonly DarkButton _btnReload = new() { Text = "Tải lại kho", Width = 120, Anchor = AnchorStyles.Left };
     private readonly DarkButton _btnClean = new() { Text = "Dọn thẻ +0", Width = 150, Enabled = false, Anchor = AnchorStyles.Left };
     private readonly Label _status = new() { AutoSize = true, ForeColor = Theme.Dim, Anchor = AnchorStyles.Left, Margin = new Padding(Theme.Gap, 0, 0, 0) };
+    private readonly DarkCheck _showAll = new() { Text = "Hiển thị cả cầu thủ đội hình chính / dự bị", Margin = new Padding(Theme.Gap, 5, 0, 0) };
     private readonly Label _pickInfo = new() { AutoSize = true, Anchor = AnchorStyles.Left, Font = Theme.Bold };
     private readonly DarkRadio _manual = new() { Text = "Tự chọn kết quả", Checked = true, Margin = new Padding(3, 5, 14, 5) };
     private readonly DarkRadio _auto = new() { Text = "Tự động: lấy phương án có giá trị lớn hơn (tiền tươi + cầu thủ)", Margin = new Padding(3, 5, 3, 5) };
@@ -54,6 +55,7 @@ public sealed class KhoTab : UserControl
         _btnClean.Margin = new Padding(Theme.Gap, 2, 0, 0);
         top.Controls.Add(_btnReload);
         top.Controls.Add(_btnClean);
+        top.Controls.Add(_showAll);
         top.Controls.Add(_status);
         root.Controls.Add(top, 0, 0);
         root.SetColumnSpan(top, 2);
@@ -90,6 +92,7 @@ public sealed class KhoTab : UserControl
         _btnReload.Click += async (_, _) => await ReloadAsync();
         _btnTrade.Click += (_, _) => OnTrade();
         _btnClean.Click += (_, _) => { var z = ZeroCards(); if (z.Count > 0) CleanRequested?.Invoke(z); };
+        _showAll.CheckedChanged += (_, _) => { if (_cards.Count > 0) Fill(); };
         _grid.CellClick += (_, e) => { if (e.RowIndex >= 0 && _grid.Columns[e.ColumnIndex].Name == "pick") TogglePick(e.RowIndex); };
         _grid.CellDoubleClick += (_, e) => { if (e.RowIndex >= 0) TogglePick(e.RowIndex); };
         _grid.CellPainting += PaintCell;
@@ -164,7 +167,7 @@ public sealed class KhoTab : UserControl
                     using (var pen = new Pen(Color.White, 2f) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round })
                         g.DrawLines(pen, new[] { new Point(box.X + 3, box.Y + 8), new Point(box.X + 7, box.Y + 12), new Point(box.X + 13, box.Y + 4) });
             }
-            else TextRenderer.DrawText(g, "-", Theme.Body, b, Theme.Border, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+            // cards of the main squad / bench cannot be traded: no tick box at all
         }
         else
         {
@@ -221,7 +224,7 @@ public sealed class KhoTab : UserControl
             _cards = await _load();
             Fill();
             int free = _cards.Count(c => c.Group == GameApi.GroupNone);
-            _status.Text = $"{free} thẻ chưa đăng ký (kho có {_cards.Count} thẻ, {_cards.Count - free} thẻ đang trong đội hình chính / dự bị).";
+            _status.Text = $"{free} chưa đăng ký · kho {_cards.Count} thẻ ({_cards.Count - free} trong đội hình)";
             _log($"[Kho] Đã đọc kho: {_status.Text}");
         }
         catch (Exception ex) { _status.Text = "Lỗi: " + ex.Message; _log("[Kho] LỖI đọc kho: " + ex.Message); }
@@ -232,13 +235,21 @@ public sealed class KhoTab : UserControl
     {
         _picked.RemoveWhere(id => _cards.All(c => c.Id != id || c.Group != GameApi.GroupNone));
         _grid.Rows.Clear();
-        foreach (var c in _cards.Where(c => c.Group == GameApi.GroupNone).OrderByDescending(c => c.Value).ThenBy(c => c.Name))
+        // unregistered cards first (tick box); with "show all" the main squad and bench follow, dimmed and without a tick box
+        foreach (var c in Shown().OrderBy(c => c.Group == GameApi.GroupNone ? 0 : 1).ThenByDescending(c => c.Value).ThenBy(c => c.Name))
         {
-            int i = _grid.Rows.Add("", NameOf(c), "", $"+{c.Grade}", c.Spid, c.Value.ToString("N0"));
+            bool reg = c.Group != GameApi.GroupNone;
+            int i = _grid.Rows.Add("", RowName(c), "", $"+{c.Grade}", c.Spid, c.Value.ToString("N0"));
             _grid.Rows[i].Tag = c;
+            if (reg) _grid.Rows[i].DefaultCellStyle.ForeColor = Theme.Dim;
         }
         _ = ResolveNamesAsync();
     }
+
+    private IEnumerable<GameApi.OwnedCard> Shown() => _showAll.Checked ? _cards : _cards.Where(c => c.Group == GameApi.GroupNone);
+
+    private string RowName(GameApi.OwnedCard c) =>
+        NameOf(c) + (c.Group == GameApi.GroupNone ? "" : c.Group == GameApi.GroupBench ? "  (dự bị)" : "  (chính)");
 
     private string NameOf(GameApi.OwnedCard c) =>
         _fullNames.TryGetValue(c.Spid, out var n) ? n : c.Name.Length > 0 ? c.Name : "(không tên)";
@@ -247,7 +258,7 @@ public sealed class KhoTab : UserControl
     private async Task ResolveNamesAsync()
     {
         int ver = ++_nameVer;
-        var spids = _cards.Where(c => c.Group == GameApi.GroupNone).Select(c => c.Spid).Distinct().Where(id => !_fullNames.ContainsKey(id)).ToList();
+        var spids = Shown().Select(c => c.Spid).Distinct().Where(id => !_fullNames.ContainsKey(id)).ToList();
         if (spids.Count == 0) return;
         _log($"[Kho] Đang lấy tên đầy đủ của {spids.Count} cầu thủ...");
         int got = 0;
@@ -263,7 +274,7 @@ public sealed class KhoTab : UserControl
                 _fullNames[id] = d.Name;
                 got++;
                 foreach (DataGridViewRow r in _grid.Rows)
-                    if (r.Tag is GameApi.OwnedCard c && c.Spid == id) r.Cells["name"].Value = d.Name;
+                    if (r.Tag is GameApi.OwnedCard c && c.Spid == id) r.Cells["name"].Value = RowName(c);
             }
             catch { }
             finally { gate.Release(); }

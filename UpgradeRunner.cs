@@ -122,6 +122,8 @@ public sealed class UpgradeRunner
                 await Pacing.Wait(0.8, 2.0, pace, ct);   // look at the price, then click buy
                 _log($"[Ép thẻ] Đang gửi lệnh mua thẻ +1 giá {cheapest.Price:N0} EP...");
                 var buy = await _api.BuyAsync(plan.Spid, 1, cheapest.Price, ct);
+                if (!buy.Ok && GameApi.IsStorageFull(buy.Raw))
+                    return Fail(0, "Hết kho: kho cầu thủ đã đầy (server báo \"Exceed plyer limit\"). Hãy bán/xóa bớt cầu thủ trong kho rồi chạy lại.");
                 if (!buy.Ok)
                 {
                     // usually the price moved between search and buy; re-search and try again
