@@ -174,8 +174,22 @@ public sealed class PlayerSearch : IDisposable
 
     public async Task<PlayerDetail?> GetDetailAsync(long spid, CancellationToken ct = default)
     {
-        var html = await _http.GetStringAsync($"https://en.fifaaddict.com/fo3player.php?id={spid}", ct);
-        return ParseDetail(spid, html);
+        PlayerDetail? d = null;
+        try
+        {
+            var html = await _http.GetStringAsync($"https://en.fifaaddict.com/fo3player.php?id={spid}", ct);
+            d = ParseDetail(spid, html);
+        }
+        catch (Exception) when (!ct.IsCancellationRequested) { }
+        return d ?? await LocalDetailAsync(spid);
+    }
+
+    /// <summary>Fallback for cards fifaaddict does not have: the stats come from the game's own files (no name, nation or club there).</summary>
+    public static async Task<PlayerDetail?> LocalDetailAsync(long spid, string name = "")
+    {
+        var db = await LocalPlayerDb.GetAsync();
+        var row = db?.Find(spid);
+        return row == null ? null : db!.ToDetail(row, name);
     }
 
     private static long Price(string row, string region)

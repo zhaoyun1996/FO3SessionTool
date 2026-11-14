@@ -40,6 +40,7 @@ public sealed class MainForm : Form
     public MainForm(Config cfg)
     {
         _cfg = cfg;
+        _ = LocalPlayerDb.GetAsync(string.IsNullOrWhiteSpace(cfg.GameDir) ? null : cfg.GameDir);   // warm up the local card data off the UI thread
         Text = "FO3 Session Tool - Ép thẻ tự động";
         MinimumSize = new Size(960, 766);
         ClientSize = new Size(990, 856);

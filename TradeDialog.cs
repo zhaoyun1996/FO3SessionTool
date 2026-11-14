@@ -193,7 +193,8 @@ public sealed class TradeDialog : Form
         {
 
             // season icon + name, centered
-            int nameW = TextRenderer.MeasureText(g, _d.Name, Theme.Bold, new Size(int.MaxValue, 0), F).Width;
+            string title = _d.Name.Length > 0 ? _d.Name : $"SPID {_o.Spid}";   // cards read from the game files have no name
+            int nameW = TextRenderer.MeasureText(g, title, Theme.Bold, new Size(int.MaxValue, 0), F).Width;
             bool icon = _sprite != null && PlayerSearch.SeasonSpriteX.ContainsKey(_d.Season);
             int total = nameW + (icon ? 22 : 0);
             if (total > W - 24) { nameW = W - 24 - (icon ? 22 : 0); total = W - 24; }
@@ -204,7 +205,7 @@ public sealed class TradeDialog : Form
                 g.DrawImage(_sprite!, new Rectangle(nx, 172, 18, 18), new Rectangle(PlayerSearch.SeasonSpriteX[_d.Season], 0, 18, 18), GraphicsUnit.Pixel);
                 nx += 22;
             }
-            TextRenderer.DrawText(g, _d.Name, Theme.Bold, new Rectangle(nx, 172, nameW, 20), Theme.Text, F | TextFormatFlags.EndEllipsis);
+            TextRenderer.DrawText(g, title, Theme.Bold, new Rectangle(nx, 172, nameW, 20), Theme.Text, F | TextFormatFlags.EndEllipsis);
 
             // positions
             int py = 202, row = 0;

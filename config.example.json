@@ -3,6 +3,7 @@
   "gameBase": "http://216.236.2.193:18090/lang-vi",
   "launcherUserAgent": "3seaLauncher/1.0.5",
   "queuePollSeconds": 5,
+  "gameDir": "",
   "hwid": {
     "board": "<32-hex-from-your-launcher>",
     "cpu": "<32-hex-from-your-launcher>",

@@ -133,7 +133,7 @@ Gốc: `{gameBase}`, cookie phiên `connect.sid` và `fo3sid`.
 
 Nguồn dữ liệu ngoài game:
 - Ảnh cầu thủ: `http://cdn.3sea.online/cdn/externalAssets/players/p{spid}.png`.
-- Tên đầy đủ, chỉ số, tìm kiếm: trang fifaaddict (dữ liệu game dạng `.big` đã mã hóa nên không đọc được).
+- Tên đầy đủ, chỉ số, tìm kiếm: trang fifaaddict. Thẻ mà fifaaddict không có (mùa mới) được đọc thẳng từ file game: bảng `players` của CSDL `fifa_ng_db` nằm trong `data\data_0.big` (nén RefPack, 62.058 thẻ), cho mùa, vị trí, chân thuận, kỹ thuật, chiều cao, cân nặng, ngày sinh (`LocalPlayerDb.cs`, chỉ đọc). File game không có tên, quốc tịch, CLB nên các mục đó để trống (tên hiện `SPID …`, trong Kho vẫn dùng tên in trên áo). Tool tìm `data\data_0.big` trong thư mục của nó và các thư mục cha; nếu để chỗ khác, thêm `"gameDir": "đường dẫn thư mục game"` vào `config.json`. Chưa đọc được tên đầy đủ (nằm trong `data\loc\locale*.big`, dạng nén chưa giải được).
 - Cờ quốc gia: flagcdn.com.
 
 ---
@@ -196,5 +196,6 @@ Nếu báo chưa có phiên hoặc phiên hết hạn: chạy lại bước 1 v�
 | `UpgradeRunner.cs`, `UpgradeTab.cs` | Thuật toán và giao diện ép thẻ |
 | `KhoTab.cs`, `TradeDialog.cs` | Kho cầu thủ và giao dịch |
 | `PlayerSearch.cs`, `PlayerCard.cs` | Dữ liệu fifaaddict và thẻ thông tin cầu thủ |
+| `LocalPlayerDb.cs` | Đọc bảng cầu thủ từ `data\data_0.big` của game (dự phòng khi fifaaddict không có thẻ) |
 | `MainForm.cs`, `Theme.cs`, `Controls.cs` | Cửa sổ chính, giao diện tối, các control tự vẽ |
 | `capture/` | Script bắt gói bằng mitmproxy |
