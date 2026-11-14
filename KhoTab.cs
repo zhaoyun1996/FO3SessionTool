@@ -92,7 +92,11 @@ public sealed class KhoTab : UserControl
         _btnReload.Click += async (_, _) => await ReloadAsync();
         _btnTrade.Click += (_, _) => OnTrade();
         _btnClean.Click += (_, _) => { var z = ZeroCards(); if (z.Count > 0) CleanRequested?.Invoke(z); };
-        _showAll.CheckedChanged += (_, _) => { if (_cards.Count > 0) Fill(); };
+        _showAll.CheckedChanged += (_, _) =>
+        {
+            listBox.Text = _showAll.Checked ? "Cầu thủ trong kho (đội hình chính, dự bị, chưa đăng ký)" : "Cầu thủ chưa đăng ký trong kho";
+            if (_cards.Count > 0) Fill();
+        };
         _grid.CellClick += (_, e) => { if (e.RowIndex >= 0 && _grid.Columns[e.ColumnIndex].Name == "pick") TogglePick(e.RowIndex); };
         _grid.CellDoubleClick += (_, e) => { if (e.RowIndex >= 0) TogglePick(e.RowIndex); };
         _grid.CellPainting += PaintCell;
@@ -167,7 +171,8 @@ public sealed class KhoTab : UserControl
                     using (var pen = new Pen(Color.White, 2f) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round })
                         g.DrawLines(pen, new[] { new Point(box.X + 3, box.Y + 8), new Point(box.X + 7, box.Y + 12), new Point(box.X + 13, box.Y + 4) });
             }
-            // cards of the main squad / bench cannot be traded: no tick box at all
+            // cards of the main squad / bench cannot be traded: no tick box, just the role
+            else TextRenderer.DrawText(g, c.Group == GameApi.GroupBench ? "Dự bị" : "Chính", Theme.SmallBold, b, Theme.Dim, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
         }
         else
         {
@@ -177,7 +182,7 @@ public sealed class KhoTab : UserControl
                 g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
                 g.DrawImage(_icons, new Rectangle(b.X + (b.Width - 20) / 2, b.Y + (b.Height - 20) / 2, 20, 20), new Rectangle(sx, 0, 18, 18), GraphicsUnit.Pixel);
             }
-            else TextRenderer.DrawText(g, $"S{season}", Theme.SmallBold, b, Theme.Dim, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+            else SeasonArt.Badge(g, new Rectangle(b.X + (b.Width - 20) / 2, b.Y + (b.Height - 20) / 2, 20, 20), season);
         }
         e.Handled = true;
     }
@@ -235,8 +240,8 @@ public sealed class KhoTab : UserControl
     {
         _picked.RemoveWhere(id => _cards.All(c => c.Id != id || c.Group != GameApi.GroupNone));
         _grid.Rows.Clear();
-        // unregistered cards first (tick box); with "show all" the main squad and bench follow, dimmed and without a tick box
-        foreach (var c in Shown().OrderBy(c => c.Group == GameApi.GroupNone ? 0 : 1).ThenByDescending(c => c.Value).ThenBy(c => c.Name))
+        // with "show all": main squad, then bench (dimmed, role shown in the Chọn column, no tick box), then the unregistered cards
+        foreach (var c in Shown().OrderBy(c => c.Group).ThenByDescending(c => c.Value).ThenBy(c => c.Name))   // main squad (0), bench (1), unregistered (2)
         {
             bool reg = c.Group != GameApi.GroupNone;
             int i = _grid.Rows.Add("", RowName(c), "", $"+{c.Grade}", c.Spid, c.Value.ToString("N0"));
@@ -248,8 +253,7 @@ public sealed class KhoTab : UserControl
 
     private IEnumerable<GameApi.OwnedCard> Shown() => _showAll.Checked ? _cards : _cards.Where(c => c.Group == GameApi.GroupNone);
 
-    private string RowName(GameApi.OwnedCard c) =>
-        NameOf(c) + (c.Group == GameApi.GroupNone ? "" : c.Group == GameApi.GroupBench ? "  (dự bị)" : "  (chính)");
+    private string RowName(GameApi.OwnedCard c) => NameOf(c);
 
     private string NameOf(GameApi.OwnedCard c) =>
         _fullNames.TryGetValue(c.Spid, out var n) ? n : c.Name.Length > 0 ? c.Name : "(không tên)";

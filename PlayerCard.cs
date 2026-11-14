@@ -60,18 +60,16 @@ public sealed class PlayerCard : Control
 
         // portrait on its own backdrop (the game's PNG is transparent, so the backdrop is drawn here)
         var pr = new Rectangle(12, 8, 124, 104);
-        using (var bg = new LinearGradientBrush(pr, Color.FromArgb(58, 52, 40), Color.FromArgb(18, 20, 26), 60f)) g.FillRectangle(bg, pr);
+        SeasonArt.Backdrop(g, pr, d.Season);   // every season has its own colours
         var st = g.Save();
         g.SetClip(pr);
-        using (var streak = new SolidBrush(Color.FromArgb(40, 215, 170, 80)))
-            g.FillPolygon(streak, new[] { new Point(pr.Right - 38, pr.Y), new Point(pr.Right - 14, pr.Y), new Point(pr.Right - 54, pr.Bottom), new Point(pr.Right - 78, pr.Bottom) });
         if (Portrait != null)
         {
             g.InterpolationMode = InterpolationMode.HighQualityBicubic;
             g.DrawImage(Portrait, FitInto(Portrait.Size, pr));
         }
         g.Restore(st);
-        using (var pen = new Pen(Color.FromArgb(120, 100, 70))) g.DrawRectangle(pen, pr);
+        using (var pen = new Pen(SeasonArt.Border(d.Season))) g.DrawRectangle(pen, pr);
         var badge = new Rectangle(pr.Right - 28, pr.Bottom - 18, 26, 16);   // card grade
         using (var bb = new SolidBrush(Color.FromArgb(200, 20, 22, 28))) g.FillRectangle(bb, badge);
         TextRenderer.DrawText(g, "+1", Theme.SmallBold, badge, Theme.Text, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
@@ -82,6 +80,11 @@ public sealed class PlayerCard : Control
         {
             g.InterpolationMode = InterpolationMode.HighQualityBicubic;
             g.DrawImage(Sprite, new Rectangle(nx, ny + 1, 18, 18), new Rectangle(sx, 0, 18, 18), GraphicsUnit.Pixel);
+            nx += 22;
+        }
+        else
+        {
+            SeasonArt.Badge(g, new Rectangle(nx, ny + 1, 18, 18), d.Season);   // no icon in the site's sprite for this season
             nx += 22;
         }
         TextRenderer.DrawText(g, d.Name, Theme.Bold, new Rectangle(nx, ny, 148 - (nx - pr.X), 20), Theme.Text, F | TextFormatFlags.EndEllipsis);

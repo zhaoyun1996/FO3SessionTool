@@ -165,7 +165,8 @@ public sealed class TradeDialog : Form
         private Rectangle PaintPortrait(Graphics g, TextFormatFlags C)
         {
             var pr = new Rectangle((W - 150) / 2, 46, 150, 120);
-            using (var bg = new LinearGradientBrush(pr, Color.FromArgb(58, 52, 40), Color.FromArgb(18, 20, 26), 60f)) g.FillRectangle(bg, pr);
+            int season = (int)(_o.Spid / 1_000_000);
+            SeasonArt.Backdrop(g, pr, season);   // every season has its own colours
             if (_portrait != null)
             {
                 var st = g.Save();
@@ -176,7 +177,7 @@ public sealed class TradeDialog : Form
                 g.DrawImage(_portrait, new Rectangle(pr.X + (pr.Width - w) / 2, pr.Bottom - h, w, h));
                 g.Restore(st);
             }
-            using (var pen = new Pen(Color.FromArgb(120, 100, 70))) g.DrawRectangle(pen, pr);
+            using (var pen = new Pen(SeasonArt.Border(season))) g.DrawRectangle(pen, pr);
             if (_best)
             {
                 var tag = new Rectangle(pr.X + 2, pr.Y + 2, 70, 16);
@@ -195,16 +196,16 @@ public sealed class TradeDialog : Form
             // season icon + name, centered
             string title = _d.Name.Length > 0 ? _d.Name : $"SPID {_o.Spid}";   // cards read from the game files have no name
             int nameW = TextRenderer.MeasureText(g, title, Theme.Bold, new Size(int.MaxValue, 0), F).Width;
-            bool icon = _sprite != null && PlayerSearch.SeasonSpriteX.ContainsKey(_d.Season);
-            int total = nameW + (icon ? 22 : 0);
-            if (total > W - 24) { nameW = W - 24 - (icon ? 22 : 0); total = W - 24; }
+            int total = nameW + 22;   // the season badge is always drawn: the site's icon, or a generated one
+            if (total > W - 24) { nameW = W - 24 - 22; total = W - 24; }
             int nx = (W - total) / 2;
-            if (icon)
+            if (_sprite != null && PlayerSearch.SeasonSpriteX.ContainsKey(_d.Season))
             {
                 g.InterpolationMode = InterpolationMode.HighQualityBicubic;
                 g.DrawImage(_sprite!, new Rectangle(nx, 172, 18, 18), new Rectangle(PlayerSearch.SeasonSpriteX[_d.Season], 0, 18, 18), GraphicsUnit.Pixel);
-                nx += 22;
             }
+            else SeasonArt.Badge(g, new Rectangle(nx, 172, 18, 18), _d.Season);
+            nx += 22;
             TextRenderer.DrawText(g, title, Theme.Bold, new Rectangle(nx, 172, nameW, 20), Theme.Text, F | TextFormatFlags.EndEllipsis);
 
             // positions
