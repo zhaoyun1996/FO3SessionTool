@@ -17,7 +17,7 @@ public sealed class BuyTab : UserControl
     private readonly Action<string> _log;
 
     private readonly DarkTextBox _name = new() { PlaceholderText = "Tên cầu thủ (để trống = lọc theo dữ liệu game)", Anchor = AnchorStyles.Left | AnchorStyles.Right };
-    private readonly DarkCombo _season = new() { DropDownStyle = ComboBoxStyle.DropDownList, Anchor = AnchorStyles.Left, Width = 210, DropDownWidth = 280 };
+    private readonly DarkCombo _season = new() { DropDownStyle = ComboBoxStyle.DropDownList, Anchor = AnchorStyles.Left, Width = 230, DropDownWidth = 300, CustomItems = true };
     private readonly DarkCombo _pos = new() { DropDownStyle = ComboBoxStyle.DropDownList, Anchor = AnchorStyles.Left, Width = 120 };
     private readonly DarkTextBox _ovrFrom = new() { PlaceholderText = "từ", Width = 64, Anchor = AnchorStyles.Left };
     private readonly DarkTextBox _ovrTo = new() { PlaceholderText = "đến", Width = 64, Anchor = AnchorStyles.Left };
@@ -95,6 +95,30 @@ public sealed class BuyTab : UserControl
         Controls.Add(nameRow);
         _grid.BringToFront();
 
+        _season.DrawItem += (_, e) =>
+        {
+            if (e.Index < 0) return;
+            bool edit = (e.State & DrawItemState.ComboBoxEdit) != 0, sel = !edit && (e.State & DrawItemState.Selected) != 0;
+            var g = e.Graphics;
+            using (var br = new SolidBrush(sel ? Theme.Hover : Theme.Surface2)) g.FillRectangle(br, e.Bounds);
+            int x = e.Bounds.X + 4;
+            string text;
+            if (_season.Items[e.Index] is int sv)
+            {
+                var r = new Rectangle(x, e.Bounds.Y + (e.Bounds.Height - 18) / 2, 18, 18);
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                if (_icons != null && PlayerSearch.SeasonSpriteX.TryGetValue(sv, out var sx))
+                {
+                    g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                    g.DrawImage(_icons, r, new Rectangle(sx, 0, 18, 18), GraphicsUnit.Pixel);
+                }
+                else SeasonArt.Badge(g, r, sv);
+                x += 24; text = SeasonName(sv);
+            }
+            else text = "Mọi mùa";
+            TextRenderer.DrawText(g, text, Theme.Body, new Rectangle(x, e.Bounds.Y, e.Bounds.Right - x, e.Bounds.Height), Theme.Text,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis);
+        };
         _btnFind.Click += async (_, _) => await FindAsync();
         _name.KeyDown += async (_, e) => { if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; await FindAsync(); } };
         _btnBuyOnce.Click += async (_, _) => await BuyOnceAsync();
@@ -139,6 +163,7 @@ public sealed class BuyTab : UserControl
 
         UpdateUi();
         _ = EnsureDbAsync();   // fill the season list right away
+        _ = LoadIconsAsync();
     }
 
     private void StyleGrid()
@@ -159,15 +184,17 @@ public sealed class BuyTab : UserControl
                 MinimumWidth = fill ? 140 : 20, DefaultCellStyle = new DataGridViewCellStyle { Alignment = al },
             });
         Col("pick", "Chọn", 56);
-        Col("name", "Cầu thủ", 200, true, DataGridViewContentAlignment.MiddleLeft);
-        Col("season", "Mùa", 55);
+        Col("name", "Cầu thủ", 170, false, DataGridViewContentAlignment.MiddleLeft);
+        Col("season", "", 45);
         Col("pos", "Vị trí", 60);
         Col("ovr", "Tổng", 60);
-        Col("club", "CLB / Mùa", 170, false, DataGridViewContentAlignment.MiddleLeft);
+        Col("club", "Mùa", 200, true, DataGridViewContentAlignment.MiddleLeft);
         Col("spid", "SPID", 90);
     }
 
     public void SetLoggedIn(bool on) { if (!on) { _cts?.Cancel(); } UpdateUi(); }
+
+    private async Task LoadIconsAsync() { try { _icons = await _sprite(); _season.Invalidate(); _grid.Invalidate(); } catch { } }
 
     private async Task EnsureDbAsync()
     {
@@ -178,7 +205,7 @@ public sealed class BuyTab : UserControl
         var keep = _season.SelectedIndex;
         _season.Items.Clear();
         _season.Items.Add("Mọi mùa");
-        foreach (var s in seasons) { var lb = _players.SeasonLabelOf(s); _season.Items.Add(lb.Length > 0 ? $"Mùa {s} - {lb}" : $"Mùa {s}"); }
+        foreach (var s in seasons) _season.Items.Add(s);   // boxed int; drawn as icon + name
         _season.SelectedIndex = Math.Min(keep, _season.Items.Count - 1);
     }
 
@@ -187,7 +214,9 @@ public sealed class BuyTab : UserControl
     private int OvrTo => ParseOr(_ovrTo.Text, int.MaxValue);
     private bool InRange(int v) => v >= OvrFrom && v <= OvrTo;
 
-    private int SelSeason => _season.SelectedIndex <= 0 ? -1 : int.Parse(System.Text.RegularExpressions.Regex.Match((string)_season.SelectedItem!, @"\d+").Value);
+    private int SelSeason => _season.SelectedItem is int v ? v : -1;
+
+    private string SeasonName(int season) { var l = _players.SeasonLabelOf(season); return l.Length > 0 ? l : $"Mùa {season}"; }
 
     private static int StatOf(LocalPlayerDb.Row r) => r.Overall + PlayerSearch.StatBonus;
 
@@ -250,7 +279,7 @@ public sealed class BuyTab : UserControl
         finally { _btnFind.Enabled = true; }
     }
 
-    private string ClubText(Item it) => it.Club.Length > 0 ? it.Club : _players.SeasonLabelOf(it.Season);
+    private string ClubText(Item it) => SeasonName(it.Season);
 
     private void Fill(List<Item> items)
     {
@@ -277,7 +306,7 @@ public sealed class BuyTab : UserControl
                 BeginInvoke(() =>
                 {
                     foreach (DataGridViewRow row in _grid.Rows)
-                        if (row.Tag is Item x && x.Spid == it.Spid) { { row.Cells["name"].Value = d.Name; row.Tag = x with { Name = d.Name }; if (x.Club.Length == 0 && d.SeasonLabel.Length > 0) row.Cells["club"].Value = d.SeasonLabel; } }
+                        if (row.Tag is Item x && x.Spid == it.Spid) { { row.Cells["name"].Value = d.Name; row.Tag = x with { Name = d.Name }; if (d.SeasonLabel.Length > 0) row.Cells["club"].Value = d.SeasonLabel; } }
                 });
             }
             catch { }
