@@ -603,7 +603,7 @@ public sealed class UpgradeTab : UserControl
         _outBusy = true;
         _outMode.Items.Clear();
         if (loopNow) _outMode.Items.AddRange(new object[] { "Giao dịch", "Bán thị trường", "Không làm gì" });
-        else _outMode.Items.AddRange(new object[] { "Giữ thẻ", "Bán thị trường" });
+        else _outMode.Items.AddRange(new object[] { "Không làm gì", "Bán thị trường" });
         _outMode.SelectedIndex = keepIdx < 0 ? 0 : Math.Min(keepIdx, _outMode.Items.Count - 1);
         _outBusy = false;
         _steps[MaxLevel].Text = OutSell ? "Bán" : "Giao dịch";

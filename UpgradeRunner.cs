@@ -69,20 +69,12 @@ public sealed class UpgradeRunner
     internal bool LastCardDiscarded { get; private set; }
     private const int MaxRestores = 2;   // the first one is free; the second one costs EP and is only done when the first left the card at +0
 
-    internal async Task<bool> AcceptRiskAsync(int lvl, int probability)
+    /// <summary>A merge under 100%: only logged (once per level), the run goes on.</summary>
+    internal Task<bool> AcceptRiskAsync(int lvl, int probability)
     {
-        if (probability >= 100) return true;
-        await _riskAsk.WaitAsync();
-        try
-        {
-            if (_riskAccepted.Contains(lvl)) return true;
-            if (ConfirmRisk == null) return false;
-            if (!await ConfirmRisk(lvl, probability)) return false;
-            _riskAccepted.Add(lvl);
-            _log($"[Ép thẻ] Bạn đã chấp nhận rủi ro khi ép lên +{lvl} (xác suất {probability}%).");
-            return true;
-        }
-        finally { _riskAsk.Release(); }
+        if (probability < 100 && _riskAccepted.Add(lvl))
+            _log($"[Ép thẻ] Ép lên +{lvl} có xác suất {probability}% (<100%): vẫn thực hiện, thẻ có thể mất hoặc giảm cấp nếu thất bại.");
+        return Task.FromResult(true);
     }
 
     /// <summary>Cards that reached the target level during the last run (older target-level cards are not included).</summary>

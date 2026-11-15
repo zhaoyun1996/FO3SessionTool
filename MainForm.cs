@@ -461,11 +461,8 @@ public sealed class MainForm : Form
 
             long wallet = api.LastWallet?.Ep ?? 0;
             string cap = wallet + pick.Ep > 5_000_000_000L ? "\n\nCẢNH BÁO: EP sau giao dịch vượt trần 5 tỷ của game, giao dịch có thể bị từ chối." : "";
-            var ask = MessageBox.Show(this,
-                $"Đổi {cards.Count} thẻ (tổng giá trị {inVal:N0} EP) lấy:\n  • Cầu thủ SPID {pick.Spid} +{pick.Grade} (giá {pick.Price:N0})\n  • {pick.Ep:N0} EP tiền tươi\n\n" +
-                "Các thẻ đã chọn sẽ MẤT và KHÔNG hoàn tác được. Tiếp tục?" + cap,
-                "Xác nhận giao dịch", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
-            if (ask != DialogResult.Yes) { Log("[Giao dịch] Đã hủy, chưa đổi thẻ nào."); return; }
+            if (cap.Length > 0) Log("[Giao dịch] Cảnh báo: EP sau giao dịch vượt trần 5 tỷ của game, giao dịch có thể bị từ chối.");
+            Log($"[Giao dịch] Đổi {cards.Count} thẻ (giá trị {inVal:N0} EP) lấy SPID {pick.Spid} +{pick.Grade} và {pick.Ep:N0} EP.");
 
             Log($"[Giao dịch] Đang chốt phương án {pick.Index + 1}...");
             var res = await api.TradeContractAsync(pick.Index);
@@ -620,24 +617,6 @@ public sealed class MainForm : Form
         return plan;
     }
 
-    /// <summary>A merge with a success chance under 100%: warn and let the user accept (the run goes on) or refuse (the run stops).</summary>
-    private Task<bool> AskRiskAsync(int level, int probability)
-    {
-        var tcs = new TaskCompletionSource<bool>();
-        BeginInvoke(() =>
-        {
-            var r = MessageBox.Show(
-                $"CẢNH BÁO: xác suất ép lên +{level} chỉ {probability}% (dưới 100%).{Environment.NewLine}{Environment.NewLine}" +
-                "Nếu ép không thành công thì thẻ có thể bị mất hoặc giảm cấp, và phí ép vẫn bị trừ." + Environment.NewLine +
-                "Tool sẽ tự phục hồi thẻ: lần đầu miễn phí, lần hai MẤT PHÍ EP; thẻ về +0 thì bị xoá khỏi kho." + Environment.NewLine + Environment.NewLine +
-                $"Chấp nhận rủi ro và tiếp tục ép lên +{level} (áp dụng cho các lần ép lên +{level} còn lại của lần chạy này)?" + Environment.NewLine +
-                "Chọn Không để dừng lại.",
-                "Xác suất ép thấp", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
-            tcs.SetResult(r == DialogResult.Yes);
-        });
-        return tcs.Task;
-    }
-
     private async void OnUpgradeRun(UpgradePlan plan)
     {
         if (_api == null) { Warn("Hãy đăng nhập trước."); return; }
@@ -673,7 +652,7 @@ public sealed class MainForm : Form
         Log($"[Ép thẻ] Bắt đầu: {plan.Name} (SPID {plan.Spid}){(plan.UseInventory ? "" : $" ×{plan.Quantity}")}, ép đến +{plan.Target}" + (plan.UseInventory ? " (thẻ trong kho)." : "."));
         try
         {
-            var runner = new UpgradeRunner(_api, Log, _upgrade.SetStepState, _upgrade.SetProgress) { ConfirmRisk = AskRiskAsync };
+            var runner = new UpgradeRunner(_api, Log, _upgrade.SetStepState, _upgrade.SetProgress);
             bool ok = await runner.RunAsync(plan, _upCts.Token);
             if (ok && plan.SellAfter)
             {
@@ -731,7 +710,7 @@ public sealed class MainForm : Form
             : $"[Xoay vòng] Bắt đầu song song: {plan.Name} (SPID {plan.Spid}), ép đến +{plan.Target}, đổi khi đạt {opt.TradeMin:N0}-{opt.TradeMax:N0} EP.");
         try
         {
-            var runner = new CycleRunner(_api, Log, _upgrade.SetStepState, _upgrade.SetProgress, _upgrade.ResetSteps) { ConfirmRisk = AskRiskAsync };
+            var runner = new CycleRunner(_api, Log, _upgrade.SetStepState, _upgrade.SetProgress, _upgrade.ResetSteps);
             var reason = await runner.RunAsync(plan, opt, _upCts.Token);
             Log("[Xoay vòng] KẾT THÚC: " + reason);
             _upgrade.SetProgress(0, 1, "Đã dừng: " + reason);
