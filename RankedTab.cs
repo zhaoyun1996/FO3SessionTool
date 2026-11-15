@@ -19,7 +19,6 @@ public sealed class RankedTab : UserControl
     private readonly DarkCombo _formation = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 190 };
     private readonly DarkCheck _realKeys = new() { Text = "Dùng phím thật cho Space (game nhảy lên trước 1 giây)", Width = 400, Height = 24 };
     private readonly DarkCombo _size = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 190 };
-    private readonly DarkButton _btnSize = new() { Text = "Đổi khung hình", Width = 150 };
     private readonly DarkCombo _tactic = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 190 };
 
     private readonly DarkButton _btnStart = new() { Text = "Bắt đầu (F9)", Width = 170, Height = 40, Font = Theme.Bold, Tag = "primary" };
@@ -43,8 +42,8 @@ public sealed class RankedTab : UserControl
         _tactic.SelectedIndex = 0;
         _formation.Items.AddRange(new object[] { "Giữ nguyên", "Đội hình A", "Đội hình B", "Đội hình C" });
         _formation.SelectedIndex = 0;
-        _size.Items.AddRange(new object[] { "1280 x 720", "1366 x 768", "1600 x 900", "1920 x 1080" });
-        _size.SelectedIndex = 2;
+        _size.Items.AddRange(SizeNames);
+        _size.SelectedIndex = 0;
 
         BuildLayout();
 
@@ -56,7 +55,7 @@ public sealed class RankedTab : UserControl
 
         _btnStart.Click += (_, _) => StartAuto();
         _btnStop.Click += (_, _) => StopAuto();
-        _btnSize.Click += (_, _) => ResizeGame();
+        _size.SelectionChangeCommitted += (_, _) => ResizeGame();   // the list of the game's own resolution menu; applied as soon as one is picked
         _timer.Tick += (_, _) => CheckGame();
         _timer.Start();
         CheckGame();
@@ -126,45 +125,70 @@ public sealed class RankedTab : UserControl
 
     private Control SizeRow()
     {
-        var p = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = Padding.Empty };
-        _size.Margin = new Padding(0, 0, 8, 0);
-        _btnSize.Margin = Padding.Empty;
-        p.Controls.Add(_size);
-        p.Controls.Add(_btnSize);
-        return p;
+        _size.Margin = Padding.Empty;
+        return _size;
     }
+
+    // Same entries as the game's own resolution menu. Index 0 = the size the window had when the tool first saw it.
+    private static readonly object[] SizeNames = { "Cửa sổ mặc định", "Full Screen (16:9)", "640 x 480 (4:3)", "800 x 600 (4:3)", "1024 x 768 (4:3)", "1280 x 720 (16:9)", "1280 x 960 (4:3)", "1600 x 900 (16:9)" };
+    private static readonly (int W, int H)[] Sizes = { (0, 0), (-1, -1), (640, 480), (800, 600), (1024, 768), (1280, 720), (1280, 960), (1600, 900) };
+    private (int W, int H)? _origSize;
 
     private void ResizeGame()
     {
         var h = WinApi.FindGameWindow();
-        if (h == IntPtr.Zero) { MessageBox.Show("Chưa thấy cửa sổ game.", "Khung hình", MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
-        var parts = ((string)_size.SelectedItem!).Split('x', StringSplitOptions.TrimEntries);
-        int w = int.Parse(parts[0]), hh = int.Parse(parts[1]);
-        bool ok = WinApi.SetClientSize(h, w, hh);
-        _log(ok ? $"[Giả lập XH] Đã đổi khung hình game thành {w}x{hh}." : $"[Giả lập XH] Game không nhận kích thước {w}x{hh} (có thể game chỉ cho vài kích thước cố định, hoặc cửa sổ bị khoá).");
+        if (h == IntPtr.Zero) return;
+        int i = _size.SelectedIndex;
+        bool ok;
+        string name = (string)SizeNames[i];
+        if (i == 1) { WinApi.Maximize(h); ok = true; }
+        else
+        {
+            WinApi.Restore(h);
+            var (w, hh) = i == 0 ? (_origSize ?? (1600, 900)) : Sizes[i];
+            ok = WinApi.SetClientSize(h, w, hh);
+        }
+        _log(ok ? $"[Giả lập XH] Khung hình game: {name}." : $"[Giả lập XH] Game không nhận khung hình {name} (cửa sổ có thể bị khoá kích thước).");
         CheckGame();
     }
+
+    private bool _gameFound;
 
     private void CheckGame()
     {
         var h = WinApi.FindGameWindow();
-        if (h != IntPtr.Zero && WinApi.GetClientRect(h, out WinApi.RECT r) && r.Width > 0)
+        _gameFound = h != IntPtr.Zero && WinApi.GetClientRect(h, out WinApi.RECT r0) && r0.Width > 0;
+        if (_gameFound)
         {
+            WinApi.GetClientRect(h, out WinApi.RECT r);
             _lblGame.Text = $"Game FO3: đã thấy cửa sổ ({r.Width}x{r.Height})";
             _lblGame.ForeColor = Color.FromArgb(70, 210, 120);
+            if (_origSize == null) _origSize = (r.Width, r.Height);
+            if (!_size.DroppedDown && !_resizing)
+            {
+                int idx = Array.FindIndex(Sizes, s => s.W == r.Width && s.H == r.Height);
+                _size.SelectedIndex = idx > 1 ? idx : (_size.SelectedIndex > 1 || _size.SelectedIndex < 0 ? 0 : _size.SelectedIndex);
+            }
         }
         else
         {
             _lblGame.Text = "Game FO3: chưa thấy cửa sổ game";
             _lblGame.ForeColor = Color.FromArgb(230, 80, 80);
         }
+        RefreshEnabled();
     }
 
-    private void SetEditable(bool on)
+    private bool _resizing;
+
+    /// <summary>No game window = nothing on the tab can work, so everything is disabled; while running only Dừng is live.</summary>
+    private void RefreshEnabled()
     {
+        bool running = _runner.IsRunning;
+        bool on = _gameFound && !running;
         _numMatches.Enabled = _numCooldown.Enabled = _tactic.Enabled = _formation.Enabled = _realKeys.Enabled = on;
+        _size.Enabled = _gameFound;
         _btnStart.Enabled = on;
-        _btnStop.Enabled = !on;
+        _btnStop.Enabled = running;
     }
 
     private void StartAuto()
@@ -176,13 +200,13 @@ public sealed class RankedTab : UserControl
             return;
         }
         var settings = new RankedAutoRunner.Settings((int)_numMatches.Value, 15 * 60, 60, 30, (int)_numCooldown.Value, null, _tactic.SelectedIndex, _formation.SelectedIndex, _realKeys.Checked);
-        SetEditable(false);
         _runner.Start(settings);
+        RefreshEnabled();
     }
 
     private void StopAuto() { if (_runner.IsRunning) _runner.Stop(); }
 
-    private void OnFinished() => SetEditable(true);
+    private void OnFinished() => RefreshEnabled();
 
     protected override void WndProc(ref Message m)
     {

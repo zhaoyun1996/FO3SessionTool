@@ -577,6 +577,9 @@ public static class WinApi
         if (prev != IntPtr.Zero && prev != hWnd) SetForegroundWindow(prev);
     }
 
+    public static void Maximize(IntPtr h) => ShowWindow(h, 3);
+    public static void Restore(IntPtr h) => ShowWindow(h, 9);
+
     /// <summary>Resizes the game window so that its client area (the drawn part) is width x height. Returns false if the window did not take it.</summary>
     public static bool SetClientSize(IntPtr hWnd, int width, int height)
     {
