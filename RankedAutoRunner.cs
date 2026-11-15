@@ -31,7 +31,8 @@ public sealed class RankedAutoRunner
         int MatchmakeTimeoutSec, // default ~60s
         int PostMatchSec,        // default ~30s
         int CooldownSec,         // default ~8s
-        Point? CustomMatchmakePos = null
+        Point? CustomMatchmakePos = null,
+        int Tactic = 0           // 0 = leave as is, 1..6 = tactic tab to select at the start of a match
     );
 
     public event Action<string>? LogMessage;
@@ -65,7 +66,10 @@ public sealed class RankedAutoRunner
     private const double PvpTabX = 0.381, PvpTabY = 0.968;       // PVP tab in the bottom bar
     private const double RankCardX = 0.563, RankCardY = 0.865;   // "Xếp hạng" card on the PVP tab
     private const double SimBtnX = 0.728, SimBtnY = 0.792;       // "ĐẤU GIẢ LẬP" on the ranked mode screen
-    private const double ReadyX = 0.795, ReadyY = 0.966;         // "Sẵn sàng" (lineup screen and pre-match screen)
+    // tactic tabs 1..6 along the bottom panel in the match (measured on a 1600x900 client)
+    private static readonly double[] TacticTabX = { 0.198, 0.3125, 0.428, 0.541, 0.656, 0.7725 };
+    private const double TacticTabY = 0.896;
+    private const double ReadyX = 0.795, ReadyY = 0.966;        // "Sẵn sàng" (lineup screen and pre-match screen)
 
     private async Task RunAdaptiveLoopAsync(Settings cfg, CancellationToken ct)
     {
@@ -86,6 +90,7 @@ public sealed class RankedAutoRunner
             var sinceNotMatch = new Stopwatch();
             var step = new Stopwatch(); step.Start();
             int menuStep = 0;
+            int tacticClicks = 0;
             GameScreenState last = GameScreenState.Unknown;
 
             while (!ct.IsCancellationRequested)
@@ -106,11 +111,19 @@ public sealed class RankedAutoRunner
                     if (!inMatch)
                     {
                         inMatch = true;
+                        tacticClicks = 0;
                         matchWatch.Restart();
                         Log("[Trận đấu] Trận bắt đầu, chờ hết trận (game tự đá, không cần bấm phím).");
                     }
                     int sec = (int)matchWatch.Elapsed.TotalSeconds;
                     StateChanged?.Invoke($"Đang thi đấu ({sec / 60}m{sec % 60:D2}s)...");
+                    // tactic tab (1..6): clicked a few seconds in, and once more later in case the first click came before the panel was up
+                    if (cfg.Tactic is >= 1 and <= 6 && tacticClicks < 2 && sec >= (tacticClicks == 0 ? 3 : 15))
+                    {
+                        tacticClicks++;
+                        Log($"[Chiến thuật] Chọn chiến thuật {cfg.Tactic}.");
+                        WinApi.ClickClientPercentBackground(hWnd, TacticTabX[cfg.Tactic - 1], TacticTabY);
+                    }
                     if (cfg.MatchDurationSec > 0 && sec > cfg.MatchDurationSec)
                     {
                         Log($"[Trận đấu] Quá {cfg.MatchDurationSec}s mà chưa hết trận, dừng để bạn kiểm tra.");
@@ -123,9 +136,17 @@ public sealed class RankedAutoRunner
                 // a match counts as finished once the pitch has been gone for a few seconds
                 if (inMatch)
                 {
-                    if (!sinceNotMatch.IsRunning) sinceNotMatch.Restart();
-                    // Intro / searching screens right before the match must not end it: only count after a real match length
-                    if (screen != GameScreenState.Intro && sinceNotMatch.Elapsed.TotalSeconds >= 4 && matchWatch.Elapsed.TotalSeconds >= 60)
+                    // Replays, close-ups and "Bỏ qua" cutscenes look nothing like the pitch view, so "the pitch is gone" does NOT mean the match is over.
+                    // It is over only when a screen that comes after a match is seen: Kết quả / reward buttons, the mode list, the menu.
+                    bool afterMatch = screen is GameScreenState.ReadyScreen or GameScreenState.ModeRank or GameScreenState.Lobby or GameScreenState.Searching;
+                    if (!afterMatch) sinceNotMatch.Reset();
+                    else if (!sinceNotMatch.IsRunning) sinceNotMatch.Restart();
+                    if (cfg.MatchDurationSec > 0 && matchWatch.Elapsed.TotalSeconds > cfg.MatchDurationSec + 120)
+                    {
+                        Log("[Trận đấu] Chờ quá lâu mà chưa thấy màn kết quả, dừng để bạn kiểm tra.");
+                        return;
+                    }
+                    if (afterMatch && sinceNotMatch.Elapsed.TotalSeconds >= 2 && matchWatch.Elapsed.TotalSeconds >= 60)
                     {
                         inMatch = false;
                         completed++;
@@ -167,11 +188,12 @@ public sealed class RankedAutoRunner
 
                     case GameScreenState.Intro:
                         StateChanged?.Invoke("Bỏ qua cảnh giới thiệu...");
-                        if (menuStep == 0 || step.Elapsed.TotalSeconds >= 2.5)
+                        if (menuStep == 0 || step.Elapsed.TotalSeconds >= 1.5)
                         {
                             menuStep++;
                             step.Restart();
-                            WinApi.SendKeyPress(hWnd, WinApi.VK_SPACE);
+                            Log($"[Bỏ qua] Gửi phím Space (lần {menuStep}).");
+                            WinApi.SendKeyPress(hWnd, WinApi.VK_SPACE, 90);
                         }
                         await Task.Delay(500, ct);
                         break;
@@ -579,6 +601,7 @@ public static class WinApi
         uint lParam = 1u | (scan << 16);
         if (IsExtendedKey(vk)) lParam |= 1u << 24;
         PostMessage(hWnd, WM_KEYDOWN, (IntPtr)vk, (IntPtr)lParam);
+        if (vk is VK_SPACE or VK_RETURN) PostMessage(hWnd, WM_CHAR, (IntPtr)vk, (IntPtr)lParam);   // some UIs read the character message
     }
 
     public static void SendKeyUp(IntPtr hWnd, ushort vk)
