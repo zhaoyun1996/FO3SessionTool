@@ -199,9 +199,8 @@ public sealed class RankedAutoRunner
                         break;
 
                     default:
-                        // loading, matchmaking, result screens: just wait (no blind clicks); an Enter every 8s only for result dialogs
-                        StateChanged?.Invoke("Đang tải / chờ đối thủ / bảng kết quả...");
-                        if (step.Elapsed.TotalSeconds >= 8) { step.Restart(); WinApi.SendKeyPress(hWnd, WinApi.VK_RETURN); }
+                        // loading and the points screen: the game moves on by itself, so only wait (no blind clicks or keys)
+                        StateChanged?.Invoke("Đang tải / chờ màn hình tiếp theo...");
                         await Task.Delay(1000, ct);
                         break;
                 }
