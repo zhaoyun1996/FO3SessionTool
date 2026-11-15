@@ -4,9 +4,9 @@ namespace FO3SessionTool;
 public sealed record BuyTarget(long Spid, string Name);
 
 /// <summary>
-/// StopBelowEp: never spend EP below this balance. MaxPrice: highest price paid for one card (0 = no cap). MinGrade..MaxGrade: card levels to buy (+1..+1 by default). MaxCards: stop after this many purchases (0 = until EP or Stop). Pace: multiplier of the human-like waits.
+/// StopBelowEp: never spend EP below this balance. MaxPrice: highest price paid for one card (0 = no cap). MinGrade..MaxGrade: card levels to buy (+1..+1 by default). MaxCards: stop after this many purchases (0 = until EP or Stop). Pace: multiplier of the human-like waits. Watch: keep checking the market and buy the moment a listing appears (shorter waits).
 /// </summary>
-public sealed record BuyOptions(long StopBelowEp = 0, long MaxPrice = 0, int MinGrade = 1, int MaxGrade = 1, int MaxCards = 0, double Pace = 1.0);
+public sealed record BuyOptions(long StopBelowEp = 0, long MaxPrice = 0, int MinGrade = 1, int MaxGrade = 1, int MaxCards = 0, double Pace = 1.0, bool Watch = false);
 
 public sealed record BuyProgress(int Bought, long Spent, long Ep, int Workers);
 
@@ -57,7 +57,7 @@ public sealed class BuyRunner
         try { if (_api.LastWallet == null) await _api.GetWalletAsync(tok); } catch (OperationCanceledException) { } catch { }
         long ep0 = _api.LastWallet?.Ep ?? 0;
         _log($"[Mua] Bắt đầu: {targets.Count} cầu thủ = {targets.Count} luồng mua song song. EP {ep0:N0}, dừng khi EP xuống dưới {opt.StopBelowEp:N0}" +
-             (opt.MaxPrice > 0 ? $", giá tối đa {opt.MaxPrice:N0}/thẻ" : "") + (opt.MaxCards > 0 ? $", tối đa {opt.MaxCards} thẻ" : "") +
+             (opt.MaxPrice > 0 ? $", giá tối đa {opt.MaxPrice:N0}/thẻ" : "") + (opt.MaxCards > 0 ? $", tối đa {opt.MaxCards} thẻ" : "") + (opt.Watch ? ", chế độ canh mua" : "") +
              ($", thẻ +{opt.MinGrade} đến +{opt.MaxGrade}."));
         if (ep0 <= opt.StopBelowEp && ep0 > 0)
             return $"EP hiện có ({ep0:N0}) đã không cao hơn mức dừng ({opt.StopBelowEp:N0}), không mua gì.";
@@ -100,7 +100,7 @@ public sealed class BuyRunner
                 if (offer == null)
                 {
                     if (empty++ % 10 == 0) _log($"{tag} Chưa có thẻ phù hợp trên chợ, đang chờ...");
-                    await Wait(5, 10, opt.Pace, tok);
+                    if (opt.Watch) await Wait(1.5, 3.5, opt.Pace, tok); else await Wait(5, 10, opt.Pace, tok);
                     continue;
                 }
                 empty = 0;
@@ -121,7 +121,7 @@ public sealed class BuyRunner
                     return;
                 }
 
-                await Wait(1.5, 3.0, opt.Pace, tok);   // look at the price, then click buy
+                if (opt.Watch) await Wait(0.3, 0.9, opt.Pace, tok); else await Wait(1.5, 3.0, opt.Pace, tok);   // look at the price, then click buy
                 var buy = await _api.BuyAsync(t.Spid, offer.Grade, offer.Price, tok);
                 if (buy.Ok)
                 {

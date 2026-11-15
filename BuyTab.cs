@@ -29,6 +29,7 @@ public sealed class BuyTab : UserControl
     private readonly DarkButton _btnAuto = new() { Text = "Bắt đầu mua tự động", Width = 190, Anchor = AnchorStyles.Left };
     private readonly DarkNumber _floorEp = new() { Minimum = 0, Maximum = 1_000_000_000_000M, ThousandsSeparator = true, Increment = 100_000, Width = 150, Anchor = AnchorStyles.Left };
     private readonly DarkNumber _maxPrice = new() { Minimum = 0, Maximum = 1_000_000_000_000M, ThousandsSeparator = true, Increment = 1000, Width = 150, Anchor = AnchorStyles.Left };
+    private readonly DarkCheck _watch = new() { Text = "Canh mua: có người bán là mua ngay", Width = 250, Height = 24 };
     private readonly DarkNumber _maxCards = new() { Minimum = 0, Maximum = 200, Width = 70, Anchor = AnchorStyles.Left };
     private readonly DarkCombo _gFrom = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 80 };
     private readonly DarkCombo _gTo = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 80 };
@@ -94,6 +95,7 @@ public sealed class BuyTab : UserControl
         _gTo.Margin = new Padding(3, 0, 3, 0); grade.Controls.Add(_gTo);
         side.Controls.Add(grade);
         L("Tốc độ"); C(_pace);
+        _watch.Margin = new Padding(3, 10, 3, 0); side.Controls.Add(_watch);
         _btnBuyOnce.Width = 240; _btnAuto.Width = 240;
         _btnBuyOnce.Margin = new Padding(3, 16, 3, 0); _btnAuto.Margin = new Padding(3, 8, 3, 0);
         side.Controls.Add(_btnBuyOnce); side.Controls.Add(_btnAuto);
@@ -379,7 +381,7 @@ public sealed class BuyTab : UserControl
     }
 
     private BuyOptions Options() => new((long)_floorEp.Value, (long)_maxPrice.Value, _gFrom.SelectedIndex + 1, _gTo.SelectedIndex + 1, (int)_maxCards.Value,
-        PaceFactor[Math.Clamp(_pace.SelectedIndex, 0, PaceFactor.Length - 1)]);
+        PaceFactor[Math.Clamp(_pace.SelectedIndex, 0, PaceFactor.Length - 1)], _watch.Checked);
 
     private async Task BuyOnceAsync()
     {

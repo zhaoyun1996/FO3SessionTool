@@ -62,30 +62,30 @@ public sealed class LeagueRunner
             if (me == null) return "Không đọc được trạng thái mùa giải (league2/me).";
             int? cards = await _api.GetItemCountAsync(GameApi.LeagueSimCardId, ct);
             if (cards == 0) return "Hết thẻ mô phỏng giải đấu: không còn thẻ nào trong túi để giả lập.";
-            _log($"[Mùa giải] Bắt đầu: {LocalPlayerDb.TeamName(me.TeamId)}, vòng kế tiếp {me.NextRound}/{me.MaxRound}, thẻ mô phỏng: {(cards?.ToString() ?? "không đọc được")}.");
+            _log($"[Mùa giải] Bắt đầu: {LocalPlayerDb.TeamName(me.TeamId)}, vòng kế tiếp {me.NextRound + 1}/{me.MaxRound + 1}, thẻ mô phỏng: {(cards?.ToString() ?? "không đọc được")}.");
 
             int round = me.NextRound;
             while (!ct.IsCancellationRequested && round <= me.MaxRound && (maxRounds <= 0 || played < maxRounds))
             {
                 var fx = LeagueFixtures.For(me, round);
-                if (fx == null) return $"Dừng ở vòng {round}: không dựng được thông số vòng này (danh sách đội không đủ 20). Đã giả lập {played} vòng.";
+                if (fx == null) return $"Dừng ở vòng {round + 1}: không dựng được thông số vòng này (danh sách đội không đủ 20). Đã giả lập {played} vòng.";
 
                 if (cards is <= 0) return $"Hết thẻ mô phỏng giải đấu sau {played} vòng.";
-                _progress($"Vòng {round}/{me.MaxRound}" + (cards != null ? $" (còn {cards} thẻ mô phỏng)" : "") + "...");
+                _progress($"Vòng {round + 1}/{me.MaxRound + 1}" + (cards != null ? $" (còn {cards} thẻ mô phỏng)" : "") + "...");
                 await _api.LeaguePrepareAsync(ct);
                 await Pacing.Wait(2, 5, pace, ct);
                 var sim = await _api.LeagueSimAsync(fx.Home, fx.Away, round, ct);
-                if (!sim.Ok) return $"Dừng ở vòng {round}: server không chấp nhận ({GameApi.Trim(sim.Raw)}). Đã giả lập {played} vòng.";
+                if (!sim.Ok) return $"Dừng ở vòng {round + 1}: server không chấp nhận ({GameApi.Trim(sim.Raw)}). Đã giả lập {played} vòng.";
                 played++;
                 if (cards != null) cards = await _api.GetItemCountAsync(GameApi.LeagueSimCardId, ct) ?? cards - 1;
-                _log($"[Mùa giải] Vòng {round}: {LocalPlayerDb.TeamName(fx.Home)} {sim.HomeGoals}-{sim.AwayGoals} {LocalPlayerDb.TeamName(fx.Away)}.");
+                _log($"[Mùa giải] Vòng {round + 1}: {LocalPlayerDb.TeamName(fx.Home)} {sim.HomeGoals}-{sim.AwayGoals} {LocalPlayerDb.TeamName(fx.Away)}.");
                 await Pacing.Wait(3, 7, pace, ct);
                 await _api.LeagueBackAsync(ct);
                 await Pacing.Wait(1.5, 3.5, pace, ct);
 
                 var after = await _api.GetLeagueMeAsync(ct);
-                if (after == null) return $"Dừng sau vòng {round}: không đọc lại được trạng thái mùa giải.";
-                if (after.NextRound <= round) return $"Dừng sau vòng {round}: server vẫn báo vòng kế tiếp là {after.NextRound}, không tiến lên.";
+                if (after == null) return $"Dừng sau vòng {round + 1}: không đọc lại được trạng thái mùa giải.";
+                if (after.NextRound <= round) return $"Dừng sau vòng {round + 1}: server vẫn báo vòng kế tiếp là {after.NextRound + 1}, không tiến lên.";
                 round = after.NextRound;
                 await Pacing.Think(pace, ct);
             }
