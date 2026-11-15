@@ -140,11 +140,28 @@ public sealed class BuyTab : UserControl
         {
             if (e.RowIndex < 0 || _grid.Rows[e.RowIndex].Tag is not Item it) return;
             if (!_picked.Remove(it.Spid)) _picked.Add(it.Spid);
-            _grid.InvalidateCell(0, e.RowIndex);
+            _grid.Invalidate();
+            UpdateUi();
+        };
+        _grid.ColumnHeaderMouseClick += (_, e) =>
+        {
+            if (e.ColumnIndex < 0 || _grid.Columns[e.ColumnIndex].Name != "pick") return;
+            var items = _grid.Rows.Cast<DataGridViewRow>().Select(r => r.Tag).OfType<Item>().ToList();
+            if (items.Count > 0 && items.All(i => _picked.Contains(i.Spid))) _picked.Clear();
+            else foreach (var i in items) _picked.Add(i.Spid);
+            _grid.Invalidate();
             UpdateUi();
         };
         _grid.CellPainting += (_, e) =>
         {
+            if (e.RowIndex == -1 && e.ColumnIndex >= 0 && _grid.Columns[e.ColumnIndex].Name == "pick")
+            {
+                e.Paint(e.CellBounds, DataGridViewPaintParts.Background | DataGridViewPaintParts.Border);
+                var all = _grid.Rows.Cast<DataGridViewRow>().Select(r => r.Tag).OfType<Item>().ToList();
+                TickBox.Draw(e.Graphics!, TickBox.BoxIn(e.CellBounds), all.Count > 0 && all.All(i => _picked.Contains(i.Spid)));
+                e.Handled = true;
+                return;
+            }
             if (e.RowIndex < 0 || e.ColumnIndex < 0 || _grid.Rows[e.RowIndex].Tag is not Item it) return;
             var cn = _grid.Columns[e.ColumnIndex].Name;
             if (cn != "season" && cn != "pick") return;

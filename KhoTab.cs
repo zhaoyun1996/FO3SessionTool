@@ -99,6 +99,7 @@ public sealed class KhoTab : UserControl
         };
         _grid.CellClick += (_, e) => { if (e.RowIndex >= 0) TogglePick(e.RowIndex); };   // one click on the row ticks / unticks it
         _grid.CellPainting += PaintCell;
+        _grid.ColumnHeaderMouseClick += (_, e) => { if (e.ColumnIndex >= 0 && _grid.Columns[e.ColumnIndex].Name == "pick") ToggleAll(); };
         UpdateTradeUi();
     }
 
@@ -150,6 +151,13 @@ public sealed class KhoTab : UserControl
     // tick box in the "pick" column; season badge in the "season" column
     private void PaintCell(object? sender, DataGridViewCellPaintingEventArgs e)
     {
+        if (e.RowIndex == -1 && e.ColumnIndex >= 0 && _grid.Columns[e.ColumnIndex].Name == "pick")
+        {
+            e.Paint(e.CellBounds, DataGridViewPaintParts.Background | DataGridViewPaintParts.Border);
+            TickBox.Draw(e.Graphics!, TickBox.BoxIn(e.CellBounds), AllPicked());
+            e.Handled = true;
+            return;
+        }
         if (e.RowIndex < 0 || e.ColumnIndex < 0 || _grid.Rows[e.RowIndex].Tag is not GameApi.OwnedCard c) return;
         var col = _grid.Columns[e.ColumnIndex].Name;
         if (col != "pick" && col != "season") return;
@@ -162,13 +170,8 @@ public sealed class KhoTab : UserControl
         {
             if (c.Group == GameApi.GroupNone)
             {
-                var box = new Rectangle(b.X + (b.Width - 16) / 2, b.Y + (b.Height - 16) / 2, 16, 16);
                 bool on = _picked.Contains(c.Id);
-                using (var br = new SolidBrush(on ? Theme.Accent : Theme.Surface2)) g.FillRectangle(br, box);
-                using (var pen = new Pen(on ? Theme.Accent : Theme.Border)) g.DrawRectangle(pen, box);
-                if (on)
-                    using (var pen = new Pen(Color.White, 2f) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round })
-                        g.DrawLines(pen, new[] { new Point(box.X + 3, box.Y + 8), new Point(box.X + 7, box.Y + 12), new Point(box.X + 13, box.Y + 4) });
+                TickBox.Draw(g, TickBox.BoxIn(b), on, on || CanPickMore(c));
             }
             // cards of the main squad / bench cannot be traded: no tick box, just the role
             else TextRenderer.DrawText(g, c.Group == GameApi.GroupBench ? "Dự bị" : "Chính", Theme.SmallBold, b, Theme.Dim, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
@@ -188,6 +191,25 @@ public sealed class KhoTab : UserControl
 
     private static int PlayerAssetsSeason(long spid) => (int)(spid / 1_000_000);
 
+    /// <summary>The trade rules (at most TradeMaxCards cards, total value at most TradeWarnValue) still allow this card to be added.</summary>
+    private bool CanPickMore(GameApi.OwnedCard c)
+        => c.Group == GameApi.GroupNone && _picked.Count < TradeMaxCards && Picked.Sum(x => x.Value) + c.Value <= TradeWarnValue;
+
+    private IEnumerable<GameApi.OwnedCard> RowCards() => _grid.Rows.Cast<DataGridViewRow>().Select(r => r.Tag).OfType<GameApi.OwnedCard>();
+
+    /// <summary>Header tick: something is picked and every card the rules still allow is already picked.</summary>
+    private bool AllPicked() => _picked.Count > 0 && !RowCards().Any(c => !_picked.Contains(c.Id) && CanPickMore(c));
+
+    private void ToggleAll()
+    {
+        if (AllPicked()) _picked.Clear();
+        else
+            foreach (var c in RowCards())
+                if (!_picked.Contains(c.Id) && CanPickMore(c)) _picked.Add(c.Id);
+        _grid.Invalidate();
+        UpdateTradeUi();
+    }
+
     private void TogglePick(int row)
     {
         if (_grid.Rows[row].Tag is not GameApi.OwnedCard c || c.Group != GameApi.GroupNone) return;
@@ -196,8 +218,6 @@ public sealed class KhoTab : UserControl
             if (_picked.Count >= TradeMaxCards)
             {
                 _log($"[Giao dịch] Không chọn được: một lần giao dịch tối đa {TradeMaxCards} thẻ.");
-                MessageBox.Show(FindForm(), $"Không thể chọn thẻ này: một lần giao dịch chỉ được chọn tối đa {TradeMaxCards} cầu thủ." +
-                    Environment.NewLine + Environment.NewLine + "Hãy bỏ bớt thẻ đã chọn hoặc giao dịch theo nhiều lần.", $"Giao dịch quá {TradeMaxCards} thẻ", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
             long after = Picked.Sum(x => x.Value) + c.Value;
@@ -205,13 +225,11 @@ public sealed class KhoTab : UserControl
             {
                 // refuse the tick: the selection stays as it was
                 _log($"[Giao dịch] Không chọn được: thêm thẻ này tổng giá trị sẽ là {after:N0} EP, vượt {TradeWarnValue:N0} EP.");
-                MessageBox.Show(FindForm(), $"Không thể chọn thẻ này: tổng giá trị các thẻ đã chọn sẽ là {after:N0} EP, vượt giới hạn {TradeWarnValue:N0} EP (1 tỷ) của một lần giao dịch." +
-                    Environment.NewLine + Environment.NewLine + "Hãy bỏ bớt thẻ đã chọn hoặc giao dịch theo nhiều lần.", "Giao dịch vượt 1 tỷ", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
             _picked.Add(c.Id);
         }
-        _grid.InvalidateRow(row);
+        _grid.Invalidate();   // the header tick and the dimmed rows depend on the whole selection
         UpdateTradeUi();
     }
 

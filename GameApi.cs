@@ -437,8 +437,8 @@ public sealed class GameApi
         try
         {
             var n = JsonNode.Parse(await GetAsync("/bag", ct));
-            var items = n?["items"]?.AsArray();
-            if (items == null) return null;
+            if (n == null) return null;
+            if (n["items"] is not JsonArray items) return 0;   // nothing in the bag: none of this item
             int sum = 0;
             foreach (var it in items)
                 if (it?["itemid"]?.GetValue<int>() == itemId) sum += it["count"]?.GetValue<int>() ?? 0;

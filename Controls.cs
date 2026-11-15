@@ -219,3 +219,21 @@ public sealed class DarkCombo : ComboBox
         g.DrawRectangle(border, 0, 0, Width - 1, Height - 1);
     }
 }
+
+/// <summary>The tick box of the "Chọn" columns (rows and header), dimmed when it cannot be ticked.</summary>
+public static class TickBox
+{
+    public static void Draw(Graphics g, Rectangle box, bool on, bool enabled = true)
+    {
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        var fill = !enabled ? Theme.Surface : on ? Theme.Accent : Theme.Surface2;
+        var border = !enabled ? Color.FromArgb(70, Theme.Border) : on ? Theme.Accent : Theme.Border;
+        using (var br = new SolidBrush(fill)) g.FillRectangle(br, box);
+        using (var pen = new Pen(border)) g.DrawRectangle(pen, box);
+        if (on)
+            using (var pen = new Pen(Color.White, 2f) { StartCap = LineCap.Round, EndCap = LineCap.Round })
+                g.DrawLines(pen, new[] { new Point(box.X + 3, box.Y + 8), new Point(box.X + 7, box.Y + 12), new Point(box.X + 13, box.Y + 4) });
+    }
+
+    public static Rectangle BoxIn(Rectangle b) => new(b.X + (b.Width - 16) / 2, b.Y + (b.Height - 16) / 2, 16, 16);
+}
