@@ -83,7 +83,9 @@ public sealed class LeagueRunner
             if (me == null) return "Không đọc được trạng thái mùa giải (league2/me).";
             if (_schedule.TeamId != 0 && _schedule.TeamId != me.TeamId)
                 return $"Lịch đã nạp là của đội {_schedule.TeamId} nhưng tài khoản đang chơi đội {me.TeamId}: hãy nạp lịch từ bản ghi của đúng mùa này.";
-            _log($"[Mùa giải] Bắt đầu: đội {me.TeamId}, vòng kế tiếp {me.NextRound}/{me.MaxRound}.");
+            int? cards = await _api.GetItemCountAsync(GameApi.LeagueSimCardId, ct);
+            if (cards == 0) return "Hết thẻ mô phỏng giải đấu: không còn thẻ nào trong túi để giả lập.";
+            _log($"[Mùa giải] Bắt đầu: đội {me.TeamId}, vòng kế tiếp {me.NextRound}/{me.MaxRound}, thẻ mô phỏng: {(cards?.ToString() ?? "không đọc được")}.");
 
             int round = me.NextRound;
             while (!ct.IsCancellationRequested && round <= me.MaxRound && (maxRounds <= 0 || played < maxRounds))
@@ -92,12 +94,14 @@ public sealed class LeagueRunner
                 if (fx == null) return $"Dừng ở vòng {round}: chưa có lịch vòng này (nạp thêm từ bản ghi một mùa đã chơi). Đã giả lập {played} vòng.";
                 if (fx.Home != me.TeamId && fx.Away != me.TeamId) return $"Dừng ở vòng {round}: lịch không có đội {me.TeamId} (đội nhà {fx.Home}, đội khách {fx.Away}). Đã giả lập {played} vòng.";
 
-                _progress($"Vòng {round}/{me.MaxRound}...");
+                if (cards is <= 0) return $"Hết thẻ mô phỏng giải đấu sau {played} vòng.";
+                _progress($"Vòng {round}/{me.MaxRound}" + (cards != null ? $" (còn {cards} thẻ mô phỏng)" : "") + "...");
                 await _api.LeaguePrepareAsync(ct);
                 await Pacing.Wait(2, 5, pace, ct);
                 var sim = await _api.LeagueSimAsync(fx.Date, fx.Home, fx.Away, round, ct);
                 if (!sim.Ok) return $"Dừng ở vòng {round}: server không chấp nhận ({GameApi.Trim(sim.Raw)}). Đã giả lập {played} vòng.";
                 played++;
+                if (cards != null) cards = await _api.GetItemCountAsync(GameApi.LeagueSimCardId, ct) ?? cards - 1;
                 _log($"[Mùa giải] Vòng {round}: {fx.Home} {sim.HomeGoals}-{sim.AwayGoals} {fx.Away}.");
                 await Pacing.Wait(3, 7, pace, ct);
                 await _api.LeagueBackAsync(ct);

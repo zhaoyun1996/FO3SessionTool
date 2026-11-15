@@ -69,7 +69,9 @@ public sealed class LeagueTab : UserControl
         try
         {
             var me = await api.GetLeagueMeAsync();
-            _info.Text = me == null ? "Không đọc được league2/me." : $"Đội {me.TeamId}, vòng kế tiếp {me.NextRound}/{me.MaxRound}";
+            var cards = await api.GetItemCountAsync(GameApi.LeagueSimCardId);
+            _info.Text = me == null ? "Không đọc được league2/me."
+                : $"Đội {me.TeamId}, vòng kế tiếp {me.NextRound}/{me.MaxRound}. Thẻ mô phỏng giải đấu: {(cards?.ToString() ?? "không đọc được")}";
         }
         catch (Exception ex) { _info.Text = "Lỗi: " + ex.Message; }
     }

@@ -428,6 +428,26 @@ public sealed class GameApi
 
     // ---- league mode (league2), endpoints observed in the game capture ----------
 
+    /// <summary>Item id of the "Thẻ mô phỏng giải đấu" (LEAGUE_SIMULATION): one is used up per simulated round.</summary>
+    public const int LeagueSimCardId = 2001;
+
+    /// <summary>GET /bag: how many of an item the account holds (all stacks added). null when the bag could not be read.</summary>
+    public async Task<int?> GetItemCountAsync(int itemId, CancellationToken ct = default)
+    {
+        try
+        {
+            var n = JsonNode.Parse(await GetAsync("/bag", ct));
+            var items = n?["items"]?.AsArray();
+            if (items == null) return null;
+            int sum = 0;
+            foreach (var it in items)
+                if (it?["itemid"]?.GetValue<int>() == itemId) sum += it["count"]?.GetValue<int>() ?? 0;
+            return sum;
+        }
+        catch (OperationCanceledException) { throw; }
+        catch { return null; }
+    }
+
     public sealed record LeagueMe(int TeamId, int NextRound, int MaxRound);
     public sealed record LeagueSim(bool Ok, int HomeGoals, int AwayGoals, string Raw);
 
