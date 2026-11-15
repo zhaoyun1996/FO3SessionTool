@@ -11,6 +11,8 @@ public enum GameScreenState
     Unknown,
     Lobby,        // Màn hình chính các tab (PVP...), có thanh tab dưới cùng
     ModeRank,     // Màn hình chọn chế độ Xếp hạng (1đấu1, 2đấu2, 3đấu3, Đấu giả lập)
+    Searching,    // Đang tìm trận (huy hiệu vàng xoay giữa màn hình)
+    Intro,        // Cảnh giới thiệu sân có chữ "Bỏ qua [SPACE]"
     ReadyScreen,  // Màn hình chọn đội hình / chờ Sẵn sàng (Nút vàng Sẵn sàng)
     InMatch,      // Trong trận đấu (Sân cỏ bóng đá chiếm ưu thế)
     PostMatch     // Hết trận, bảng kết quả, lật thẻ phần thưởng
@@ -122,7 +124,8 @@ public sealed class RankedAutoRunner
                 if (inMatch)
                 {
                     if (!sinceNotMatch.IsRunning) sinceNotMatch.Restart();
-                    if (sinceNotMatch.Elapsed.TotalSeconds >= 4)
+                    // Intro / searching screens right before the match must not end it: only count after a real match length
+                    if (screen != GameScreenState.Intro && sinceNotMatch.Elapsed.TotalSeconds >= 4 && matchWatch.Elapsed.TotalSeconds >= 60)
                     {
                         inMatch = false;
                         completed++;
@@ -150,6 +153,27 @@ public sealed class RankedAutoRunner
                             WinApi.ClickClientPercentBackground(hWnd, ReadyX, ReadyY);
                         }
                         await Task.Delay(700, ct);
+                        break;
+
+                    case GameScreenState.Searching:
+                        StateChanged?.Invoke($"Đang tìm trận ({(int)step.Elapsed.TotalSeconds}s)...");
+                        if (cfg.MatchmakeTimeoutSec > 0 && step.Elapsed.TotalSeconds > cfg.MatchmakeTimeoutSec && menuStep == 0)
+                        {
+                            menuStep = 1;
+                            Log($"[Tìm trận] Đã chờ quá {cfg.MatchmakeTimeoutSec}s chưa có trận, vẫn tiếp tục chờ.");
+                        }
+                        await Task.Delay(1000, ct);
+                        break;
+
+                    case GameScreenState.Intro:
+                        StateChanged?.Invoke("Bỏ qua cảnh giới thiệu...");
+                        if (menuStep == 0 || step.Elapsed.TotalSeconds >= 2.5)
+                        {
+                            menuStep++;
+                            step.Restart();
+                            WinApi.SendKeyPress(hWnd, WinApi.VK_SPACE);
+                        }
+                        await Task.Delay(500, ct);
                         break;
 
                     case GameScreenState.ModeRank:
@@ -205,6 +229,8 @@ public sealed class RankedAutoRunner
     {
         GameScreenState.Lobby => "Màn hình chính (tab PVP...)",
         GameScreenState.ModeRank => "Chọn chế độ Xếp hạng",
+        GameScreenState.Searching => "Đang tìm trận",
+        GameScreenState.Intro => "Cảnh giới thiệu (Bỏ qua)",
         GameScreenState.ReadyScreen => "Màn hình Chuẩn bị / Sẵn sàng",
         GameScreenState.InMatch => "Trong trận đấu (Đá bóng)",
         GameScreenState.PostMatch => "Hết trận / Kết quả & Mở thẻ",
@@ -251,9 +277,24 @@ public sealed class RankedAutoRunner
                 if (c.G >= 55 && c.G > c.R + 12 && c.G > c.B + 12) grass++;
             }
         double grassRatio = (double)grass / n;
-        if (grassRatio >= 0.55) return (GameScreenState.InMatch, $"sân cỏ {grassRatio:P0}");
-
         int darkBar = 0;
+        for (int x = 5; x < 155; x += 4) { var c = t.GetPixel(x, 87); if (Math.Max(c.R, Math.Max(c.G, c.B)) < 60) darkBar++; }
+
+        // searching: big gold badge in the middle (282 px on the real screenshot, other screens < 10)
+        int gold = 0;
+        for (int y = 28; y < 62; y++)
+            for (int x = 55; x < 105; x++)
+            {
+                var c = t.GetPixel(x, y);
+                if (c.R >= 170 && c.G >= 130 && c.B <= 90 && c.R - c.B > 100) gold++;
+            }
+        if (gold >= 100) return (GameScreenState.Searching, $"đang tìm trận (huy hiệu vàng {gold}px)");
+
+        // pitch everywhere: in a match the tactics panel at the bottom is dark (20+), the intro cutscene ("Bỏ qua [SPACE]") has none
+        if (grassRatio >= 0.55)
+            return darkBar <= 3 ? (GameScreenState.Intro, $"cảnh giới thiệu, sân cỏ {grassRatio:P0}") : (GameScreenState.InMatch, $"sân cỏ {grassRatio:P0}");
+
+        darkBar = 0;
         for (int x = 5; x < 155; x += 4) { var c = t.GetPixel(x, 87); if (Math.Max(c.R, Math.Max(c.G, c.B)) < 60) darkBar++; }
         if (darkBar >= 25 && grassRatio < 0.45)
         {

@@ -78,6 +78,8 @@ public sealed class RankedTab : UserControl
             {
                 GameScreenState.Lobby => "Màn hình chính (tab PVP...)",
                 GameScreenState.ModeRank => "Chọn chế độ Xếp hạng",
+                GameScreenState.Searching => "Đang tìm trận",
+                GameScreenState.Intro => "Cảnh giới thiệu (Bỏ qua)",
                 GameScreenState.ReadyScreen => "Màn hình Sẵn Sàng (Nút vàng)",
                 GameScreenState.InMatch => "Trong trận đấu (Đang đá)",
                 GameScreenState.PostMatch => "Hết trận / Nhận thưởng",
@@ -233,6 +235,8 @@ public sealed class RankedTab : UserControl
         {
             GameScreenState.Lobby       => "🟡 Màn hình chính (tab PVP...)",
             GameScreenState.ModeRank    => "🟠 Chọn chế độ Xếp hạng",
+            GameScreenState.Searching   => "🔎 Đang tìm trận",
+            GameScreenState.Intro       => "⏭ Cảnh giới thiệu (Bỏ qua)",
             GameScreenState.ReadyScreen => "🟢 Màn hình Chuẩn bị / Sẵn sàng",
             GameScreenState.InMatch     => "⚽ Trong trận đấu (Đang đá)",
             GameScreenState.PostMatch   => "🏆 Hết trận / Nhận thưởng",
