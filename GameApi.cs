@@ -448,7 +448,7 @@ public sealed class GameApi
         catch { return null; }
     }
 
-    public sealed record LeagueMe(int TeamId, int NextRound, int MaxRound);
+    public sealed record LeagueMe(int TeamId, int NextRound, int MaxRound, int[] Teams, long OpeningDay);
     public sealed record LeagueSim(bool Ok, int HomeGoals, int AwayGoals, string Raw);
 
     /// <summary>GET /league2/me: own team, next round and last round of the season.</summary>
@@ -459,7 +459,8 @@ public sealed class GameApi
             var n = JsonNode.Parse(await GetAsync("/league2/me", ct));
             var lg = n?["league"];
             if (n?["teamid"] == null || lg?["nextround"] == null) return null;
-            return new LeagueMe(n["teamid"]!.GetValue<int>(), lg["nextround"]!.GetValue<int>(), lg["maxround"]?.GetValue<int>() ?? 0);
+            var teams = lg["teams"]?.AsArray().Select(t => t!.GetValue<int>()).ToArray() ?? Array.Empty<int>();
+            return new LeagueMe(n["teamid"]!.GetValue<int>(), lg["nextround"]!.GetValue<int>(), lg["maxround"]?.GetValue<int>() ?? 0, teams, n["openingday"]?.GetValue<long>() ?? 0);
         }
         catch (OperationCanceledException) { throw; }
         catch { return null; }
