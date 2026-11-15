@@ -3,15 +3,22 @@ using System.Text.RegularExpressions;
 
 namespace FO3SessionTool;
 
-/// <summary>One fixture of the game's league mode (league2): the numbers the client sends with league2/match/sim.</summary>
-public sealed record LeagueFixture(int Round, long Date, int Home, int Away);
+/// <summary>One fixture of the game's league mode (league2): the numbers the client sends with league2/match/sim.
+/// Estimated: the date was not seen in a capture (guessed as one week after the previous known round).</summary>
+public sealed record LeagueFixture(int Round, long Date, int Home, int Away, bool Estimated = false);
 
 /// <summary>
 /// The league calendar (date, home, away per round) is not served by any endpoint seen so far, the game client works it out itself.
-/// It is learned from a capture of one season played in the game and kept in %APPDATA%\FO3SessionTool\league_schedule.json.
+/// Observed in captures: opponents and home / away are the same every season, and round r + 19 repeats round r with home and away swapped
+/// (rounds 0..37 = two legs of 20 teams); the dates differ every season (weekend days, 6 to 8 days apart, no rule found).
+/// So the fixtures come from any captured season (completed by that mirror rule) and the dates from the captured rounds of the current season;
+/// the rest of the dates are estimated and marked as such.
 /// </summary>
 public sealed class LeagueSchedule
 {
+    public const int LastRound = 37;
+    private const long Week = 7L * 24 * 3600 * 1000;
+
     public int TeamId { get; set; }
     public List<LeagueFixture> Rounds { get; set; } = new();
 
@@ -30,30 +37,65 @@ public sealed class LeagueSchedule
 
     public LeagueFixture? Get(int round) => Rounds.FirstOrDefault(r => r.Round == round);
 
-    public string Describe() => Rounds.Count == 0 ? "chưa có lịch"
-        : $"{Rounds.Count} vòng (vòng {Rounds.Min(r => r.Round)} đến {Rounds.Max(r => r.Round)}), đội {TeamId}";
+    public string Describe()
+    {
+        if (Rounds.Count == 0) return "chưa có lịch";
+        int est = Rounds.Count(r => r.Estimated);
+        return $"{Rounds.Count} vòng (vòng {Rounds.Min(r => r.Round)} đến {Rounds.Max(r => r.Round)}), đội {TeamId}" + (est > 0 ? $", trong đó {est} vòng có ngày ước tính" : "");
+    }
 
-    /// <summary>Reads every league2/match/sim request of a game capture (the format capture\game_capture.py writes) and merges them in.
-    /// Returns how many rounds were added or updated.</summary>
+    private sealed record Seen(int Pos, int Round, long Date, int Home, int Away);
+
+    /// <summary>Reads the league2/match/sim and league2/match requests of a game capture (the format capture\game_capture.py writes) and
+    /// builds the whole season from them. Returns the number of rounds in the resulting schedule.</summary>
     public int MergeFromCapture(string captureFile)
     {
         var text = File.ReadAllText(captureFile);
-        int added = 0;
-        foreach (Match m in Regex.Matches(text, @"POST http://[^\s]+/league2/match/sim\r?\n.*?(\{[^{}]*""matchtype""[^{}]*\})", RegexOptions.Singleline))
+        var seen = new List<Seen>();
+        foreach (Match m in Regex.Matches(text, @"POST http://[^\s]+/league2/match(?:/sim)?\r?\n.*?(\{[^{}]*""matchtype""[^{}]*\})", RegexOptions.Singleline))
         {
             try
             {
                 using var doc = JsonDocument.Parse(m.Groups[1].Value);
                 var r = doc.RootElement;
                 if (r.GetProperty("matchtype").GetString() != "league") continue;
-                var fx = new LeagueFixture(r.GetProperty("round").GetInt32(), r.GetProperty("date").GetInt64(), r.GetProperty("home").GetInt32(), r.GetProperty("away").GetInt32());
-                Rounds.RemoveAll(x => x.Round == fx.Round);
-                Rounds.Add(fx); added++;
+                seen.Add(new Seen(m.Index, r.GetProperty("round").GetInt32(), r.GetProperty("date").GetInt64(), r.GetProperty("home").GetInt32(), r.GetProperty("away").GetInt32()));
             }
             catch (Exception) { }
         }
-        Rounds = Rounds.OrderBy(x => x.Round).ToList();
-        return added;
+        if (seen.Count == 0) return 0;
+
+        // our team: the one in (nearly) every fixture
+        int team = seen.SelectMany(x => new[] { x.Home, x.Away }).GroupBy(x => x).OrderByDescending(g => g.Count()).First().Key;
+        // the current season starts at the last league2/calendar call; before it the dates belong to an older season
+        int lastCal = text.LastIndexOf("/league2/calendar", StringComparison.Ordinal);
+        var current = lastCal >= 0 && seen.Any(x => x.Pos > lastCal) ? seen.Where(x => x.Pos > lastCal).ToList() : seen;
+
+        // fixtures (opponent, are we at home) per round from any season, then the mirror rule for the rest
+        var fix = new Dictionary<int, (int Opp, bool Home)>();
+        foreach (var x in seen) fix[x.Round] = x.Home == team ? (x.Away, true) : (x.Home, false);
+        for (int r = 0; r <= LastRound; r++)
+        {
+            if (fix.ContainsKey(r)) continue;
+            int mirror = r < 19 ? r + 19 : r - 19;
+            if (fix.TryGetValue(mirror, out var f)) fix[r] = (f.Opp, !f.Home);
+        }
+
+        var known = current.GroupBy(x => x.Round).ToDictionary(g => g.Key, g => g.Last().Date);
+        var rounds = new List<LeagueFixture>();
+        long lastDate = 0; int lastDateRound = 0;
+        for (int r = 0; r <= LastRound; r++)
+        {
+            if (!fix.TryGetValue(r, out var f)) continue;
+            long date; bool est = false;
+            if (known.TryGetValue(r, out var d)) { date = d; lastDate = d; lastDateRound = r; }
+            else if (lastDate > 0) { date = lastDate + Week * (r - lastDateRound); est = true; }
+            else continue;   // before the first known date of the season: not needed (those rounds are already played)
+            rounds.Add(new LeagueFixture(r, date, f.Home ? team : f.Opp, f.Home ? f.Opp : team, est));
+        }
+        TeamId = team;
+        Rounds = rounds;
+        return rounds.Count;
     }
 }
 
@@ -98,6 +140,7 @@ public sealed class LeagueRunner
                 _progress($"Vòng {round}/{me.MaxRound}" + (cards != null ? $" (còn {cards} thẻ mô phỏng)" : "") + "...");
                 await _api.LeaguePrepareAsync(ct);
                 await Pacing.Wait(2, 5, pace, ct);
+                if (fx.Estimated) _log($"[Mùa giải] Vòng {round}: ngày thi đấu là ước tính ({DateTimeOffset.FromUnixTimeMilliseconds(fx.Date):yyyy-MM-dd}).");
                 var sim = await _api.LeagueSimAsync(fx.Date, fx.Home, fx.Away, round, ct);
                 if (!sim.Ok) return $"Dừng ở vòng {round}: server không chấp nhận ({GameApi.Trim(sim.Raw)}). Đã giả lập {played} vòng.";
                 played++;
