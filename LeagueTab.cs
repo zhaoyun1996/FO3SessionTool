@@ -76,25 +76,24 @@ public sealed class LeagueTab : UserControl
         catch (Exception ex) { _info.Text = "Lỗi: " + ex.Message; }
     }
 
-    private void Import()
+    private async void Import()
     {
         using var dlg = new OpenFileDialog { Title = "Chọn file bản ghi game", Filter = "Bản ghi (*.txt)|*.txt|Tất cả|*.*", CheckFileExists = true };
+        foreach (var dir in new[] { Path.Combine(AppContext.BaseDirectory, "..", "capture"), Path.Combine(AppContext.BaseDirectory, "capture") })
+            if (Directory.Exists(dir)) { dlg.InitialDirectory = Path.GetFullPath(dir); break; }
         if (dlg.ShowDialog(FindForm()) != DialogResult.OK) return;
+        _btnImport.Enabled = false; _sched.Text = "Đang đọc file bản ghi (file lớn, có thể mất vài giây)...";
         try
         {
-            int n = _schedule.MergeFromCapture(dlg.FileName);
-            if (n == 0) { MessageBox.Show("Không thấy lệnh league2/match/sim nào trong file này.", "Nạp lịch", MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
-            if (_schedule.TeamId == 0)
-            {
-                // our team is the one in every fixture
-                var common = _schedule.Rounds.SelectMany(r => new[] { r.Home, r.Away }).GroupBy(x => x).OrderByDescending(g => g.Count()).First().Key;
-                _schedule.TeamId = common;
-            }
+            string file = dlg.FileName;
+            int n = await Task.Run(() => _schedule.MergeFromCapture(file));
+            if (n == 0) { ShowSchedule(); MessageBox.Show("Không thấy lệnh league2/match/sim hay league2/match nào trong file này.", "Nạp lịch", MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
             _schedule.Save();
             ShowSchedule();
-            _log($"[Mùa giải] Đã nạp lịch: {n} vòng từ bản ghi. {_schedule.Describe()}.");
+            _log($"[Mùa giải] Đã nạp lịch từ bản ghi: {_schedule.Describe()}.");
         }
-        catch (Exception ex) { MessageBox.Show("Không nạp được: " + ex.Message, "Nạp lịch", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
+        catch (Exception ex) { ShowSchedule(); MessageBox.Show("Không nạp được: " + ex.Message, "Nạp lịch", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
+        finally { _btnImport.Enabled = true; }
     }
 
     private async Task ToggleAsync()
@@ -103,7 +102,7 @@ public sealed class LeagueTab : UserControl
         var api = _api();
         if (api == null) { MessageBox.Show("Hãy đăng nhập trước.", "Mùa giải", MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
         if (_otherBusy()) { MessageBox.Show("Đang chạy một việc khác (ép thẻ, mua, giao dịch), hãy dừng trước.", "Mùa giải", MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
-        if (_schedule.Rounds.Count == 0) { MessageBox.Show("Chưa có lịch thi đấu. Hãy nạp lịch từ file bản ghi trước.", "Mùa giải", MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
+        if (_schedule.Rounds.Count == 0) { MessageBox.Show("Chưa có lịch thi đấu. Bấm nút \"Nạp lịch từ bản ghi...\" ở trên, chọn file capture\\game_capture_redacted.txt, đợi dòng \"Lịch thi đấu đã nạp\" hiện số vòng rồi chạy lại.", "Mùa giải", MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
         int n = (int)_rounds.Value;
         var ask = MessageBox.Show($"Giả lập {(n > 0 ? n + " vòng" : "đến hết mùa")} của chế độ Mùa giải (server tự tính tỉ số, kết quả và phần thưởng tính vào tài khoản). Tiếp tục?",
             "Mùa giải", MessageBoxButtons.YesNo, MessageBoxIcon.Question);

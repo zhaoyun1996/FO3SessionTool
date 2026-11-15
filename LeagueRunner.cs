@@ -50,7 +50,11 @@ public sealed class LeagueSchedule
     /// builds the whole season from them. Returns the number of rounds in the resulting schedule.</summary>
     public int MergeFromCapture(string captureFile)
     {
-        var text = File.ReadAllText(captureFile);
+        // the capture may still be open for writing by the capture tool: read it with shared access
+        string text;
+        using (var fs = new FileStream(captureFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+        using (var sr = new StreamReader(fs, System.Text.Encoding.UTF8))
+            text = sr.ReadToEnd();
         var seen = new List<Seen>();
         foreach (Match m in Regex.Matches(text, @"POST http://[^\s]+/league2/match(?:/sim)?\r?\n.*?(\{[^{}]*""matchtype""[^{}]*\})", RegexOptions.Singleline))
         {
