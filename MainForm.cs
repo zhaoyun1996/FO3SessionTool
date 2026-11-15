@@ -35,6 +35,8 @@ public sealed class MainForm : Form
     private UpgradeTab _upgrade = null!;
     private KhoTab _kho = null!;
     private TabPage _tabKho = null!;
+    private RankedTab _ranked = null!;
+    private TabPage _tabRanked = null!;
     private BuyTab _buy = null!;
     private LeagueTab _league = null!;
     private TabPage _tabLeague = null!;
@@ -112,9 +114,13 @@ public sealed class MainForm : Form
         _buy = new BuyTab(() => _api, async () => _sprite ??= await _players.LoadImageAsync(PlayerSearch.SpriteUrl) as Bitmap, _players, () => _upCts != null || _trading || _league.Running, Log);
         var tabBuy = new TabPage("Mua cầu thủ") { Padding = new Padding(0, Theme.Gap, 0, 0) };
         tabBuy.Controls.Add(_buy);
+        _ranked = new RankedTab(Log);
+        _tabRanked = new TabPage("Auto Xếp hạng") { Padding = new Padding(0, Theme.Gap, 0, 0) };
+        _tabRanked.Controls.Add(_ranked);
         _tabs.TabPages.Add(_tabUpgrade);
         _tabs.TabPages.Add(tabBuy);
         _tabs.TabPages.Add(_tabKho);
+        _tabs.TabPages.Add(_tabRanked);
         _league = new LeagueTab(() => _api, () => _upCts != null || _trading || _buy.Running, Log);
         _tabLeague = new TabPage("Mùa giải") { Padding = new Padding(0, Theme.Gap, 0, 0) };
         _tabLeague.Controls.Add(_league);
