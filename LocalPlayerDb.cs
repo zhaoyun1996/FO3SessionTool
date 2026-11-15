@@ -209,6 +209,11 @@ public sealed class LocalPlayerDb
     }
 
     /// <summary>teamplayerlinks (spid -> team) + teams (team -> name); national teams (listed in the nations table) are skipped. Best effort: empty on any surprise.</summary>
+    /// <summary>Club name by team id, filled when the card data is read (empty if it could not be).</summary>
+    public static Dictionary<long, string> TeamNames { get; private set; } = new();
+
+    public static string TeamName(long id) => TeamNames.TryGetValue(id, out var n) && n.Length > 0 ? n : $"Đội {id}";
+
     private static Dictionary<long, string> ReadClubs(byte[] d, int tables, int baseOff)
     {
         var result = new Dictionary<long, string>();
@@ -243,6 +248,7 @@ public sealed class LocalPlayerDb
             if (Open("Crbb", out var nr, out var ns, out var nc, out var nd) && nd.TryGetValue("mCXg", out var nf))
                 for (int r = 0; r < nc; r++) national.Add(Int(nr, ns, r, nf));
             var names = new Dictionary<long, string>();
+            TeamNames = names;
             if (Open("lyxL", out var tr, out var ts, out var tc, out var td) && td.TryGetValue("mCXg", out var tid) && td.TryGetValue("AUsv", out var tname) && tname.Type == 0)
                 for (int r = 0; r < tc; r++)
                 {

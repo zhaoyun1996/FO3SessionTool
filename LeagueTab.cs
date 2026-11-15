@@ -29,7 +29,7 @@ public sealed class LeagueTab : UserControl
         var note = new Label
         {
             AutoSize = true, MaximumSize = new Size(820, 0), ForeColor = Theme.Dim,
-            Text = "Chế độ Mùa giải của game: mỗi vòng tool gửi lên server đúng thông số game gửi (ngày, đội nhà, đội khách, vòng) cho một trận mô phỏng, " +
+            Text = "Chế độ Mùa giải của game: mỗi vòng tool gửi lên server đúng thông số game gửi (đội nhà, đội khách, vòng) cho một trận mô phỏng, " +
                    "server tự tính tỉ số. Mỗi vòng tốn 1 thẻ mô phỏng giải đấu. Thông số vòng được tool tự dựng từ danh sách đội của mùa giải.",
         };
         col.Controls.Add(note);
@@ -60,10 +60,11 @@ public sealed class LeagueTab : UserControl
         if (api == null) { _info.Text = "Hãy đăng nhập."; return; }
         try
         {
+            await LocalPlayerDb.GetAsync();
             var me = await api.GetLeagueMeAsync();
             var cards = await api.GetItemCountAsync(GameApi.LeagueSimCardId);
             _info.Text = me == null ? "Không đọc được league2/me."
-                : $"Đội {me.TeamId}, vòng kế tiếp {me.NextRound}/{me.MaxRound}. Thẻ mô phỏng giải đấu: {(cards?.ToString() ?? "không đọc được")}";
+                : $"{LocalPlayerDb.TeamName(me.TeamId)}, vòng kế tiếp {me.NextRound}/{me.MaxRound}. Thẻ mô phỏng giải đấu: {(cards?.ToString() ?? "không đọc được")}";
         }
         catch (Exception ex) { _info.Text = "Lỗi: " + ex.Message; }
     }

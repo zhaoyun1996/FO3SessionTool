@@ -3,13 +3,12 @@ using System.Text.Json;
 namespace FO3SessionTool;
 
 /// <summary>The three numbers league2/match/sim needs for a round (plus the round itself).</summary>
-public sealed record LeagueFixture(int Round, long Date, int Home, int Away);
+public sealed record LeagueFixture(int Round, int Home, int Away);
 
 /// <summary>
 /// Works out the parameters of a simulated round from league2/me only (the 20 team ids and the opening day):
 /// the fixtures are the standard round-robin (circle method) over the team list, played backwards, second leg = first leg with home and away swapped
-/// (checked against 6 played rounds of the new season and the whole old one); the date is one week per round after the opening day (an estimate,
-/// the game's own dates wobble by a day).
+/// (checked against 6 played rounds of the new season and the whole old one); the date is not sent.
 /// </summary>
 public static class LeagueFixtures
 {
@@ -31,8 +30,7 @@ public static class LeagueFixtures
             bool home = a == me.TeamId;             // first leg: the list order decides (it also holds for the fixed team except one round, see note)
             if (i == 0) home = a == me.TeamId ^ (r % 4 is 2 or 3);   // observed A A B B A A over rounds 0..5
             if (round >= legs) home = !home;        // second leg: sides swapped
-            long date = me.OpeningDay + 7 * Day + 7 * 3600 * 1000L + round * 7 * Day;
-            return new LeagueFixture(round, date, home ? me.TeamId : (a == me.TeamId ? b : a), home ? (a == me.TeamId ? b : a) : me.TeamId);
+            return new LeagueFixture(round, home ? me.TeamId : (a == me.TeamId ? b : a), home ? (a == me.TeamId ? b : a) : me.TeamId);
         }
         return null;
     }
@@ -59,11 +57,12 @@ public sealed class LeagueRunner
         int played = 0;
         try
         {
+            await LocalPlayerDb.GetAsync();   // club names
             var me = await _api.GetLeagueMeAsync(ct);
             if (me == null) return "Không đọc được trạng thái mùa giải (league2/me).";
             int? cards = await _api.GetItemCountAsync(GameApi.LeagueSimCardId, ct);
             if (cards == 0) return "Hết thẻ mô phỏng giải đấu: không còn thẻ nào trong túi để giả lập.";
-            _log($"[Mùa giải] Bắt đầu: đội {me.TeamId}, vòng kế tiếp {me.NextRound}/{me.MaxRound}, thẻ mô phỏng: {(cards?.ToString() ?? "không đọc được")}.");
+            _log($"[Mùa giải] Bắt đầu: {LocalPlayerDb.TeamName(me.TeamId)}, vòng kế tiếp {me.NextRound}/{me.MaxRound}, thẻ mô phỏng: {(cards?.ToString() ?? "không đọc được")}.");
 
             int round = me.NextRound;
             while (!ct.IsCancellationRequested && round <= me.MaxRound && (maxRounds <= 0 || played < maxRounds))
@@ -75,11 +74,11 @@ public sealed class LeagueRunner
                 _progress($"Vòng {round}/{me.MaxRound}" + (cards != null ? $" (còn {cards} thẻ mô phỏng)" : "") + "...");
                 await _api.LeaguePrepareAsync(ct);
                 await Pacing.Wait(2, 5, pace, ct);
-                var sim = await _api.LeagueSimAsync(fx.Date, fx.Home, fx.Away, round, ct);
+                var sim = await _api.LeagueSimAsync(fx.Home, fx.Away, round, ct);
                 if (!sim.Ok) return $"Dừng ở vòng {round}: server không chấp nhận ({GameApi.Trim(sim.Raw)}). Đã giả lập {played} vòng.";
                 played++;
                 if (cards != null) cards = await _api.GetItemCountAsync(GameApi.LeagueSimCardId, ct) ?? cards - 1;
-                _log($"[Mùa giải] Vòng {round}: {fx.Home} {sim.HomeGoals}-{sim.AwayGoals} {fx.Away}.");
+                _log($"[Mùa giải] Vòng {round}: {LocalPlayerDb.TeamName(fx.Home)} {sim.HomeGoals}-{sim.AwayGoals} {LocalPlayerDb.TeamName(fx.Away)}.");
                 await Pacing.Wait(3, 7, pace, ct);
                 await _api.LeagueBackAsync(ct);
                 await Pacing.Wait(1.5, 3.5, pace, ct);

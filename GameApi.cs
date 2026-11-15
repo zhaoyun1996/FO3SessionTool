@@ -482,9 +482,9 @@ public sealed class GameApi
     }
 
     /// <summary>POST /league2/match/sim {"date","home","away","matchtype":"league","round"}: the server plays the round and returns the score.</summary>
-    public async Task<LeagueSim> LeagueSimAsync(long date, int home, int away, int round, CancellationToken ct = default)
+    public async Task<LeagueSim> LeagueSimAsync(int home, int away, int round, CancellationToken ct = default)
     {
-        var body = new JsonObject { ["date"] = date, ["home"] = home, ["away"] = away, ["matchtype"] = "league", ["round"] = round };
+        var body = new JsonObject { ["home"] = home, ["away"] = away, ["matchtype"] = "league", ["round"] = round };
         using var content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json");
         using var resp = await _http.PostAsync(_base + "/league2/match/sim", content, ct);
         var text = await resp.Content.ReadAsStringAsync(ct);
