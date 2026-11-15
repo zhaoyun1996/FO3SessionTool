@@ -466,4 +466,64 @@ public sealed class GameApi
         return new Ranking(my["title"]?.ToString() ?? "", my["start"]?.ToString() ?? "", my["next"]?.ToString() ?? "", modes,
             tot?["playedgames"]?.GetValue<int>() ?? 0, tot?["totalwins"]?.GetValue<int>() ?? 0, tot?["highelo"]?.GetValue<int>() ?? 0, rewards);
     }
+
+    // ---- league mode (league2), endpoints observed in the game capture ----------
+
+    public sealed record LeagueMe(int TeamId, int NextRound, int MaxRound);
+    public sealed record LeagueSim(bool Ok, int HomeGoals, int AwayGoals, string Raw);
+
+    /// <summary>GET /league2/me: own team, next round and last round of the season.</summary>
+    public async Task<LeagueMe?> GetLeagueMeAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            var n = JsonNode.Parse(await GetAsync("/league2/me", ct));
+            var lg = n?["league"];
+            if (n?["teamid"] == null || lg?["nextround"] == null) return null;
+            return new LeagueMe(n["teamid"]!.GetValue<int>(), lg["nextround"]!.GetValue<int>(), lg["maxround"]?.GetValue<int>() ?? 0);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch { return null; }
+    }
+
+    private async Task<string> PutAsync(string path, CancellationToken ct)
+    {
+        using var content = new StringContent("{\"_method\":\"PUT\"}", Encoding.UTF8, "application/json");
+        using var resp = await _http.PostAsync(_base + path, content, ct);
+        return await resp.Content.ReadAsStringAsync(ct);
+    }
+
+    /// <summary>What the client does before a simulated round: sponsor achievement, history, coach/me.</summary>
+    public async Task LeaguePrepareAsync(CancellationToken ct = default)
+    {
+        await PutAsync("/league2/sponsor/achievement", ct);
+        await GetAsync("/league2/history/players/league", ct);
+        ApplyMoney(await GetAsync("/coach/me", ct));
+    }
+
+    /// <summary>POST /league2/match/sim {"date","home","away","matchtype":"league","round"}: the server plays the round and returns the score.</summary>
+    public async Task<LeagueSim> LeagueSimAsync(long date, int home, int away, int round, CancellationToken ct = default)
+    {
+        var body = new JsonObject { ["date"] = date, ["home"] = home, ["away"] = away, ["matchtype"] = "league", ["round"] = round };
+        using var content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json");
+        using var resp = await _http.PostAsync(_base + "/league2/match/sim", content, ct);
+        var text = await resp.Content.ReadAsStringAsync(ct);
+        bool ok = false; int h = 0, a = 0;
+        try
+        {
+            var n = JsonNode.Parse(text);
+            ok = n?["result"]?.GetValue<bool>() == true;
+            h = n?["score"]?["home"]?.GetValue<int>() ?? 0; a = n?["score"]?["away"]?.GetValue<int>() ?? 0;
+            if (ok) ApplyMoney(text);
+        }
+        catch { }
+        return new LeagueSim(ok && resp.IsSuccessStatusCode, h, a, resp.IsSuccessStatusCode ? text : $"HTTP {(int)resp.StatusCode}: {text}");
+    }
+
+    /// <summary>PUT /league2/back then GET /matchup: back to the league screen after a round.</summary>
+    public async Task LeagueBackAsync(CancellationToken ct = default)
+    {
+        await PutAsync("/league2/back", ct);
+        await GetAsync("/matchup", ct);
+    }
 }

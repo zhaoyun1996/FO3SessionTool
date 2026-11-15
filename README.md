@@ -207,3 +207,7 @@ Nếu báo chưa có phiên hoặc phiên hết hạn: chạy lại bước 1 v�
 - **Mua thủ công**: chọn dòng, mua thẻ rẻ nhất của từng cầu thủ một lần.
 - **Mua tự động**: mỗi cầu thủ chọn = một luồng chạy song song; dừng khi EP xuống dưới mức đặt, đủ số thẻ, hết kho hoặc bấm Dừng.
 - Các khoảng chờ giữa các lần mua (cả ở tab Ép thẻ) đã tăng lên để giảm lỗi mua.
+
+## Tab "Mùa giải"
+
+Chế độ Mùa giải (league2) của game, server tự tính tỉ số từng vòng. Tool gọi đúng các lệnh game gọi: `league2/sponsor/achievement`, `league2/history/players/league`, `coach/me`, `league2/match/sim`, `league2/back`, `matchup`. Lịch (ngày, đội nhà, đội khách mỗi vòng) không có trên API nên được nạp từ file bản ghi (`capture\game_capture_redacted.txt`) của một mùa đã giả lập trong game, lưu ở `%APPDATA%\FO3SessionTool\league_schedule.json`.
