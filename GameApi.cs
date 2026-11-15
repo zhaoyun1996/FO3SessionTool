@@ -431,14 +431,15 @@ public sealed class GameApi
     /// <summary>Item id of the "Thẻ mô phỏng giải đấu" (LEAGUE_SIMULATION): one is used up per simulated round.</summary>
     public const int LeagueSimCardId = 2001;
 
-    /// <summary>GET /bag: how many of an item the account holds (all stacks added). null when the bag could not be read.</summary>
+    /// <summary>GET /coach/me, the "items" list (the game's /bag call only returns an empty list): how many of an item the account holds
+    /// (all stacks added), 0 when it is not in the list. null when the answer could not be read.</summary>
     public async Task<int?> GetItemCountAsync(int itemId, CancellationToken ct = default)
     {
         try
         {
-            var n = JsonNode.Parse(await GetAsync("/bag", ct));
-            if (n == null) return null;
-            if (n["items"] is not JsonArray items) return 0;   // nothing in the bag: none of this item
+            var n = JsonNode.Parse(await GetAsync("/coach/me", ct));
+            if (n == null || n["id"] == null) return null;
+            if (n["items"] is not JsonArray items) return 0;   // no items at all: none of this one
             int sum = 0;
             foreach (var it in items)
                 if (it?["itemid"]?.GetValue<int>() == itemId) sum += it["count"]?.GetValue<int>() ?? 0;

@@ -321,14 +321,23 @@ public sealed class BuyTab : UserControl
 
     private string ClubText(Item it) => SeasonName(it.Season);
 
-    private void Fill(List<Item> items)
+    /// <summary>Highest Tổng first (cards without a Tổng last), then by SPID.</summary>
+    private static IEnumerable<Item> ByStat(IEnumerable<Item> items) => items.OrderByDescending(i => i.Stat).ThenBy(i => i.Spid);
+
+    private void AddRows(IEnumerable<Item> items, Dictionary<long, object?>? club = null)
     {
         _grid.Rows.Clear();
-        foreach (var it in items)
+        foreach (var it in ByStat(items))
         {
-            int i = _grid.Rows.Add("", it.Name.Length > 0 ? it.Name : "(SPID " + it.Spid + ")", it.Season, it.Pos, it.Stat > 0 ? it.Stat : "", ClubText(it), it.Spid);
+            object? c = club != null && club.TryGetValue(it.Spid, out var cv) && cv != null ? cv : ClubText(it);
+            int i = _grid.Rows.Add("", it.Name.Length > 0 ? it.Name : "(SPID " + it.Spid + ")", it.Season, it.Pos, it.Stat > 0 ? it.Stat : "", c, it.Spid);
             _grid.Rows[i].Tag = it;
         }
+    }
+
+    private void Fill(List<Item> items)
+    {
+        AddRows(items);
         _status.Text = $"{items.Count} cầu thủ" + (items.Count >= MaxRows ? $" (hiện {MaxRows} đầu tiên, hãy lọc thêm)" : "") + ". Bấm vào dòng để chọn nhiều cầu thủ rồi mua.";
         UpdateUi();
     }
@@ -379,6 +388,11 @@ public sealed class BuyTab : UserControl
             if (ranged)
                 for (int i = _grid.Rows.Count - 1; i >= 0; i--)
                     if (_grid.Rows[i].Tag is Item x && !InRange(x.Stat)) _grid.Rows.RemoveAt(i);
+            // the Tổng values changed while reading the site: put the rows in order again (highest first)
+            var rows = _grid.Rows.Cast<DataGridViewRow>().Where(r => r.Tag is Item).ToList();
+            var club = new Dictionary<long, object?>();
+            foreach (var r in rows) club[((Item)r.Tag!).Spid] = r.Cells["club"].Value;
+            AddRows(rows.Select(r => (Item)r.Tag!).ToList(), club);
             _status.Text = $"{_grid.Rows.Count} cầu thủ. Bấm vào dòng để chọn nhiều cầu thủ rồi mua.";
         });
     }
