@@ -64,6 +64,33 @@ public sealed class PlayerSearch : IDisposable
         return t;
     }
 
+    /// <summary>Icons the site's badged.png lacks, taken from another sprite and appended to the right of it as extra 18x18 cells.
+    /// Season 40 uses the "NHD" icon (first row, x = 396) of the 36x36 grid in this sprite.</summary>
+    private const string ExtraSpriteUrl = "https://fifaaddict.com/ffaddv2/img/892f78a.png";
+
+    private async Task<Image> AddExtraIconsAsync(Image sprite, CancellationToken ct)
+    {
+        var plain = new Bitmap(sprite);
+        try
+        {
+            var bytes = await _http.GetByteArrayAsync(ExtraSpriteUrl, ct);
+            using var ms = new MemoryStream(bytes);
+            using var extra = Image.FromStream(ms);
+            int x = plain.Width;
+            var composed = new Bitmap(x + 18, plain.Height);
+            using (var g = Graphics.FromImage(composed))
+            {
+                g.DrawImage(plain, 0, 0, plain.Width, plain.Height);
+                g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                g.DrawImage(extra, new Rectangle(x, 0, 18, 18), new Rectangle(11 * 36, 0, 36, 36), GraphicsUnit.Pixel);
+            }
+            SeasonSpriteX[40] = x;
+            plain.Dispose();
+            return composed;
+        }
+        catch (Exception) when (!ct.IsCancellationRequested) { return plain; }
+    }
+
     public async Task<Image?> LoadImageAsync(string url, CancellationToken ct = default)
     {
         try
@@ -71,6 +98,7 @@ public sealed class PlayerSearch : IDisposable
             var bytes = await _http.GetByteArrayAsync(url, ct);
             using var ms = new MemoryStream(bytes);
             using var img = Image.FromStream(ms);
+            if (url == SpriteUrl) return await AddExtraIconsAsync(img, ct);
             return new Bitmap(img);   // detach from the stream
         }
         catch { return null; }
