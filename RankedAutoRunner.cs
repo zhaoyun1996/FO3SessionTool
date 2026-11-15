@@ -9,7 +9,8 @@ namespace FO3SessionTool;
 public enum GameScreenState
 {
     Unknown,
-    Lobby,        // Sảnh Xếp hạng (PVP lobby)
+    Lobby,        // Màn hình chính các tab (PVP...), có thanh tab dưới cùng
+    ModeRank,     // Màn hình chọn chế độ Xếp hạng (1đấu1, 2đấu2, 3đấu3, Đấu giả lập)
     ReadyScreen,  // Màn hình chọn đội hình / chờ Sẵn sàng (Nút vàng Sẵn sàng)
     InMatch,      // Trong trận đấu (Sân cỏ bóng đá chiếm ưu thế)
     PostMatch     // Hết trận, bảng kết quả, lật thẻ phần thưởng
@@ -58,202 +59,137 @@ public sealed class RankedAutoRunner
         StateChanged?.Invoke("Đã dừng");
     }
 
+    // Button positions as a fraction of the game's client area (measured on real screenshots of the game).
+    private const double PvpTabX = 0.381, PvpTabY = 0.968;       // PVP tab in the bottom bar
+    private const double RankCardX = 0.563, RankCardY = 0.865;   // "Xếp hạng" card on the PVP tab
+    private const double SimBtnX = 0.728, SimBtnY = 0.792;       // "ĐẤU GIẢ LẬP" on the ranked mode screen
+    private const double ReadyX = 0.795, ReadyY = 0.966;         // "Sẵn sàng" (lineup screen and pre-match screen)
+
     private async Task RunAdaptiveLoopAsync(Settings cfg, CancellationToken ct)
     {
         try
         {
-            Log("[Auto 1v1] Khởi động Auto Xếp Hạng 1vs1 (Hệ thống nhận diện màn hình thông minh)...");
-            StateChanged?.Invoke("Đang nhận diện màn hình...");
-
+            Log("[Giả lập XH] Bắt đầu: tab PVP > Xếp hạng > Đấu giả lập > Sẵn sàng > chờ hết trận. Chỉ gửi lệnh vào cửa sổ game, không dùng chuột/bàn phím của bạn.");
             var hWnd = WinApi.FindGameWindow();
             if (hWnd == IntPtr.Zero)
             {
-                Log("[Auto 1v1] Lỗi: Chưa phát hiện cửa sổ game FO3 (fifazf.exe)! Vui lòng mở game trước.");
+                Log("[Giả lập XH] Lỗi: chưa thấy cửa sổ game FO3 (fifazf.exe). Hãy mở game trước.");
                 return;
             }
-
             WinApi.FakeFocus(hWnd);
-            int completedMatches = 0;
-            bool wasInMatch = false;
-            var matchStopwatch = new Stopwatch();
-            var stateStopwatch = new Stopwatch();
-            stateStopwatch.Start();
 
-            var rnd = new Random();
-            ushort[] moveKeys = { WinApi.VK_UP, WinApi.VK_DOWN, WinApi.VK_LEFT, WinApi.VK_RIGHT };
-
-            GameScreenState lastScreen = GameScreenState.Unknown;
-            int readyClickCount = 0;
-            int lobbyClickCount = 0;
-            int lastLogSec = 0;
+            int completed = 0;
+            bool inMatch = false;
+            var matchWatch = new Stopwatch();
+            var sinceNotMatch = new Stopwatch();
+            var step = new Stopwatch(); step.Start();
+            int menuStep = 0;
+            GameScreenState last = GameScreenState.Unknown;
 
             while (!ct.IsCancellationRequested)
             {
-                // Capture and detect current game screen
-                var (currentScreen, detail) = DetectScreen(hWnd);
-                ScreenDetected?.Invoke(currentScreen, detail);
-
-                if (currentScreen != lastScreen)
+                var (screen, detail) = DetectScreen(hWnd);
+                ScreenDetected?.Invoke(screen, detail);
+                if (screen != last)
                 {
-                    Log($"[Màn hình] Chuyển trạng thái: {GetScreenName(currentScreen)} ({detail})");
-                    lastScreen = currentScreen;
-                    stateStopwatch.Restart();
-                    readyClickCount = 0;
-                    lobbyClickCount = 0;
+                    Log($"[Màn hình] {GetScreenName(screen)} ({detail})");
+                    last = screen;
+                    step.Restart();
+                    menuStep = 0;
                 }
 
-                switch (currentScreen)
+                if (screen == GameScreenState.InMatch)
                 {
-                    // -------------------------------------------------------------
-                    // 1. SẢNH XẾP HẠNG (LOBBY)
-                    // -------------------------------------------------------------
-                    case GameScreenState.Lobby:
-                        if (wasInMatch)
+                    sinceNotMatch.Reset();
+                    if (!inMatch)
+                    {
+                        inMatch = true;
+                        matchWatch.Restart();
+                        Log("[Trận đấu] Trận bắt đầu, chờ hết trận (game tự đá, không cần bấm phím).");
+                    }
+                    int sec = (int)matchWatch.Elapsed.TotalSeconds;
+                    StateChanged?.Invoke($"Đang thi đấu ({sec / 60}m{sec % 60:D2}s)...");
+                    if (cfg.MatchDurationSec > 0 && sec > cfg.MatchDurationSec)
+                    {
+                        Log($"[Trận đấu] Quá {cfg.MatchDurationSec}s mà chưa hết trận, dừng để bạn kiểm tra.");
+                        return;
+                    }
+                    await Task.Delay(2000, ct);
+                    continue;
+                }
+
+                // a match counts as finished once the pitch has been gone for a few seconds
+                if (inMatch)
+                {
+                    if (!sinceNotMatch.IsRunning) sinceNotMatch.Restart();
+                    if (sinceNotMatch.Elapsed.TotalSeconds >= 4)
+                    {
+                        inMatch = false;
+                        completed++;
+                        ProgressChanged?.Invoke(completed, cfg.TargetMatches);
+                        Log($"[Giả lập XH] Xong trận {completed} / {(cfg.TargetMatches > 0 ? cfg.TargetMatches : "∞")}.");
+                        if (cfg.TargetMatches > 0 && completed >= cfg.TargetMatches)
                         {
-                            // We just returned from a match to the lobby!
-                            wasInMatch = false;
-                            completedMatches++;
-                            ProgressChanged?.Invoke(completedMatches, cfg.TargetMatches);
-                            Log($"\r\n>>> ĐÃ HOÀN THÀNH TRẬN ĐẤU THỨ {completedMatches} / {(cfg.TargetMatches > 0 ? cfg.TargetMatches : "∞")} <<<");
-
-                            if (cfg.TargetMatches > 0 && completedMatches >= cfg.TargetMatches)
-                            {
-                                Log($"[Auto 1v1] ĐÃ ĐẠT MỤC TIÊU {cfg.TargetMatches} TRẬN XẾP HẠNG! TỰ ĐỘNG DỪNG.");
-                                return;
-                            }
-
-                            Log($"[Auto 1v1] Nghỉ {cfg.CooldownSec}s trước khi tìm trận tiếp theo...");
-                            StateChanged?.Invoke($"Nghỉ giữa 2 trận ({cfg.CooldownSec}s)...");
-                            await Task.Delay(cfg.CooldownSec * 1000, ct);
-                            continue;
+                            Log("[Giả lập XH] Đủ số trận, dừng.");
+                            return;
                         }
+                        StateChanged?.Invoke($"Nghỉ {cfg.CooldownSec}s...");
+                        await Task.Delay(cfg.CooldownSec * 1000, ct);
+                        continue;
+                    }
+                }
 
-                        StateChanged?.Invoke("Đang ở Sảnh: Bấm Tìm trận 1vs1...");
-                        if (lobbyClickCount == 0 || stateStopwatch.Elapsed.TotalSeconds >= 10)
-                        {
-                            lobbyClickCount++;
-                            stateStopwatch.Restart();
-                            Log($"[Sảnh] Bấm nút '1 ĐẤU 1' tìm đối thủ...");
-
-                            // Background click 1v1 button
-                            if (cfg.CustomMatchmakePos.HasValue)
-                                WinApi.ClickClientBackground(hWnd, cfg.CustomMatchmakePos.Value.X, cfg.CustomMatchmakePos.Value.Y);
-                            else
-                                WinApi.ClickClientPercentBackground(hWnd, 0.255, 0.800);
-
-                            await Task.Delay(200, ct);
-                            WinApi.SendKeyPress(hWnd, WinApi.VK_RETURN);
-                        }
-                        await Task.Delay(1500, ct);
-                        break;
-
-                    // -------------------------------------------------------------
-                    // 2. MÀN HÌNH CHỌN ĐỘI HÌNH / CHỜ SẴN SÀNG (READY SCREEN)
-                    // -------------------------------------------------------------
+                switch (screen)
+                {
                     case GameScreenState.ReadyScreen:
-                        StateChanged?.Invoke("Màn hình chuẩn bị: Gửi lệnh Sẵn sàng...");
-                        if (readyClickCount < 5 || stateStopwatch.Elapsed.TotalSeconds >= 3)
+                        StateChanged?.Invoke("Bấm Sẵn sàng...");
+                        if (menuStep == 0 || step.Elapsed.TotalSeconds >= 2)
                         {
-                            readyClickCount++;
-                            stateStopwatch.Restart();
-                            Log($"[Sẵn sàng] Gửi lệnh Sẵn sàng (F3 / Enter / Click nút vàng)...");
-
-                            // Click yellow ready button at bottom right (background)
-                            WinApi.ClickClientPercentBackground(hWnd, 0.815, 0.970);
-                            await Task.Delay(80, ct);
-                            WinApi.SendKeyPress(hWnd, WinApi.VK_F3);
-                            await Task.Delay(80, ct);
-                            WinApi.SendKeyPress(hWnd, WinApi.VK_RETURN);
+                            menuStep++;
+                            step.Restart();
+                            WinApi.ClickClientPercentBackground(hWnd, ReadyX, ReadyY);
                         }
-                        await Task.Delay(1500, ct);
+                        await Task.Delay(700, ct);
                         break;
 
-                    // -------------------------------------------------------------
-                    // 3. TRONG TRẬN ĐẤU (IN-MATCH GAMEPLAY - ANTI-AFK)
-                    // -------------------------------------------------------------
-                    case GameScreenState.InMatch:
-                        if (!wasInMatch)
+                    case GameScreenState.ModeRank:
+                        StateChanged?.Invoke("Chọn ĐẤU GIẢ LẬP...");
+                        if (menuStep == 0 || step.Elapsed.TotalSeconds >= 4)
                         {
-                            wasInMatch = true;
-                            matchStopwatch.Restart();
-                            lastLogSec = 0;
-                            Log($"\r\n[Trận đấu] BẮT ĐẦU TRẬN ĐẤU (Đang phát phím chống AFK)...");
+                            menuStep++;
+                            step.Restart();
+                            Log("[Xếp hạng] Bấm ĐẤU GIẢ LẬP.");
+                            if (cfg.CustomMatchmakePos.HasValue) WinApi.ClickClientBackground(hWnd, cfg.CustomMatchmakePos.Value.X, cfg.CustomMatchmakePos.Value.Y);
+                            else WinApi.ClickClientPercentBackground(hWnd, SimBtnX, SimBtnY);
                         }
-
-                        int matchSec = (int)matchStopwatch.Elapsed.TotalSeconds;
-                        if (matchSec - lastLogSec >= 30)
-                        {
-                            lastLogSec = matchSec;
-                            Log($"[Trận đấu] Thời gian thi đấu: {matchSec / 60}m{matchSec % 60:D2}s - Đang điều khiển cầu thủ...");
-                            StateChanged?.Invoke($"Đang thi đấu ({matchSec / 60}m{matchSec % 60:D2}s)...");
-                        }
-
-                        // Skip half-time if present
-                        if (matchSec % 20 == 0)
-                        {
-                            WinApi.SendKeyPress(hWnd, WinApi.VK_RETURN);
-                            await Task.Delay(60, ct);
-                            WinApi.SendKeyPress(hWnd, WinApi.VK_SPACE);
-                        }
-
-                        // Anti-AFK gameplay keys (FO2 standard):
-                        // 1. Directional move (200 - 350ms)
-                        ushort dir = moveKeys[rnd.Next(moveKeys.Length)];
-                        WinApi.SendKeyDown(hWnd, dir);
-                        await Task.Delay(rnd.Next(200, 350), ct);
-                        WinApi.SendKeyUp(hWnd, dir);
-
-                        // 2. Action key
-                        int roll = rnd.Next(100);
-                        if (roll < 45) WinApi.SendKeyPress(hWnd, WinApi.VK_S, 60);       // Pass / Switch player
-                        else if (roll < 70) WinApi.SendKeyPress(hWnd, WinApi.VK_D, 80);  // Shoot / Tackle
-                        else if (roll < 85) WinApi.SendKeyPress(hWnd, WinApi.VK_W, 60);  // Through ball
-                        else if (roll < 95) WinApi.SendKeyPress(hWnd, WinApi.VK_A, 80);  // Long pass / Slide
-                        else WinApi.SendKeyPress(hWnd, WinApi.VK_E, 120);                 // Sprint
-
-                        await Task.Delay(rnd.Next(1000, 1800), ct);
+                        await Task.Delay(800, ct);
                         break;
 
-                    // -------------------------------------------------------------
-                    // 4. HẾT TRẬN / NHẬN THƯỞNG / LẬT THẺ (POST-MATCH)
-                    // -------------------------------------------------------------
-                    case GameScreenState.PostMatch:
-                        StateChanged?.Invoke("Hết trận: Bỏ qua kết quả & Nhận thưởng...");
-                        Log("[Hết trận] Bấm Enter / Space / Esc bỏ qua kết quả & lật thẻ quà...");
-
-                        // Background clicks for card flips and confirm buttons
-                        WinApi.ClickClientPercentBackground(hWnd, 0.500, 0.800);
-                        await Task.Delay(60, ct);
-                        WinApi.ClickClientPercentBackground(hWnd, 0.800, 0.950);
-                        await Task.Delay(60, ct);
-
-                        WinApi.SendKeyPress(hWnd, WinApi.VK_RETURN);
-                        await Task.Delay(100, ct);
-                        WinApi.SendKeyPress(hWnd, WinApi.VK_SPACE);
-                        await Task.Delay(100, ct);
-                        WinApi.SendKeyPress(hWnd, WinApi.VK_ESCAPE);
-                        await Task.Delay(1000, ct);
+                    case GameScreenState.Lobby:
+                        StateChanged?.Invoke("Vào tab PVP > Xếp hạng...");
+                        // the "Xếp hạng" card is only clicked after the PVP tab was clicked, and the screen is re-checked every loop
+                        if (menuStep == 0) { menuStep = 1; step.Restart(); Log("[Menu] Bấm tab PVP."); WinApi.ClickClientPercentBackground(hWnd, PvpTabX, PvpTabY); }
+                        else if (menuStep == 1 && step.Elapsed.TotalSeconds >= 1.5) { menuStep = 2; step.Restart(); Log("[Menu] Bấm thẻ Xếp hạng."); WinApi.ClickClientPercentBackground(hWnd, RankCardX, RankCardY); }
+                        else if (menuStep >= 2 && step.Elapsed.TotalSeconds >= 6) { menuStep = 0; step.Restart(); }
+                        await Task.Delay(700, ct);
                         break;
 
-                    // -------------------------------------------------------------
-                    // 5. CHƯA RÕ MÀN HÌNH (UNKNOWN / LOADING)
-                    // -------------------------------------------------------------
                     default:
-                        StateChanged?.Invoke("Đang tải hoặc chờ màn hình tiếp theo...");
-                        // Gentle keep-alive / continue
-                        WinApi.SendKeyPress(hWnd, WinApi.VK_SPACE);
-                        await Task.Delay(1500, ct);
+                        // loading, matchmaking, result screens: just wait (no blind clicks); an Enter every 8s only for result dialogs
+                        StateChanged?.Invoke("Đang tải / chờ đối thủ / bảng kết quả...");
+                        if (step.Elapsed.TotalSeconds >= 8) { step.Restart(); WinApi.SendKeyPress(hWnd, WinApi.VK_RETURN); }
+                        await Task.Delay(1000, ct);
                         break;
                 }
             }
         }
         catch (OperationCanceledException)
         {
-            Log("[Auto 1v1] Đã dừng theo yêu cầu của bạn.");
+            Log("[Giả lập XH] Đã dừng theo yêu cầu.");
         }
         catch (Exception ex)
         {
-            Log($"[Auto 1v1] Lỗi: {ex.Message}");
+            Log($"[Giả lập XH] Lỗi: {ex.Message}");
         }
         finally
         {
@@ -267,7 +203,8 @@ public sealed class RankedAutoRunner
 
     private static string GetScreenName(GameScreenState s) => s switch
     {
-        GameScreenState.Lobby => "Sảnh Xếp Hạng 1vs1",
+        GameScreenState.Lobby => "Màn hình chính (tab PVP...)",
+        GameScreenState.ModeRank => "Chọn chế độ Xếp hạng",
         GameScreenState.ReadyScreen => "Màn hình Chuẩn bị / Sẵn sàng",
         GameScreenState.InMatch => "Trong trận đấu (Đá bóng)",
         GameScreenState.PostMatch => "Hết trận / Kết quả & Mở thẻ",
@@ -290,104 +227,45 @@ public sealed class RankedAutoRunner
     private static (GameScreenState State, string Detail) DetectScreen(IntPtr hWnd)
     {
         using var bmp = WinApi.CaptureGameWindow(hWnd);
-        if (bmp == null) return (GameScreenState.Unknown, "Không thể chụp cửa sổ game");
+        if (bmp == null) return (GameScreenState.Unknown, "Không chụp được cửa sổ game (đang thu nhỏ?)");
+        using var t = WinApi.Downscale(bmp, 160, 90);
 
-        // Downscale to 160x90 thumbnail for ultra-fast (sub-millisecond) pixel analysis
-        using var thumb = WinApi.Downscale(bmp, 160, 90);
-
-        // ----------------------------------------------------------------
-        // 1. ReadyScreen: "Sẵn sàng" button at bottom right
-        //    In the actual game screenshot, the button is bright GREEN (not yellow):
-        //    ~R:60-100, G:180-220, B:60-100 — typical "Confirm/Ready" green button
-        //    Location: X: 118-155, Y: 83-89 (on 160x90 thumb)
-        // Also look for yellow-green (some UI themes show it as yellow-green)
-        // ----------------------------------------------------------------
-        int readyGreenCount = 0;
-        int readyYellowCount = 0;
-        for (int y = 82; y < 90; y++)
-        {
-            for (int x = 115; x < 158; x++)
+        // Measured on real screenshots of the game: the yellow "Sẵn sàng" button bottom right gives 60+ px,
+        // the pitch is 0.81-0.89 of the picture in a match and 0.17-0.31 in menus (which have a dark tab bar),
+        // and the mode screen has a big dark panel in the middle (83% dark, the home tab 16%).
+        int yellow = 0;
+        for (int y = 80; y < 90; y++)
+            for (int x = 112; x < 152; x++)
             {
-                var c = thumb.GetPixel(x, y);
-                // Bright green button: G dominant, R and B are substantially lower
-                if (c.G >= 150 && c.G > c.R + 50 && c.G > c.B + 50)
-                    readyGreenCount++;
-                // Yellow/amber variant: High R + High G, Low B
-                else if (c.R >= 180 && c.G >= 150 && c.B <= 90 && (c.R - c.B) > 100)
-                    readyYellowCount++;
+                var c = t.GetPixel(x, y);
+                if (c.R >= 150 && c.G >= 125 && c.B <= 100 && c.R - c.B > 90) yellow++;
             }
-        }
+        if (yellow >= 20) return (GameScreenState.ReadyScreen, $"nút Sẵn sàng ({yellow}px vàng)");
 
-        if (readyGreenCount >= 10 || readyYellowCount >= 8)
-        {
-            return (GameScreenState.ReadyScreen,
-                $"Nút Sẵn sàng: xanh={readyGreenCount}px, vàng={readyYellowCount}px");
-        }
-
-        // ----------------------------------------------------------------
-        // 2. Count pitch-green pixels across full center area (X: 10-150, Y: 10-80)
-        //    InMatch = sân cỏ chiếm hầu hết màn hình (> 35%)
-        //    Lobby   = cỏ ít hơn vì có popup che (8-30%)
-        // ----------------------------------------------------------------
-        int greenCount = 0;
-        int totalFieldPixels = 0;
+        int grass = 0, n = 0;
         for (int y = 10; y < 80; y += 2)
-        {
             for (int x = 10; x < 150; x += 2)
             {
-                totalFieldPixels++;
-                var c = thumb.GetPixel(x, y);
-                // Pitch grass: G clearly dominant over R and B, not too dark
-                if (c.G >= 55 && c.G > c.R + 12 && c.G > c.B + 12)
-                    greenCount++;
+                n++;
+                var c = t.GetPixel(x, y);
+                if (c.G >= 55 && c.G > c.R + 12 && c.G > c.B + 12) grass++;
             }
-        }
-        double grassRatio = totalFieldPixels > 0 ? (double)greenCount / totalFieldPixels : 0;
+        double grassRatio = (double)grass / n;
+        if (grassRatio >= 0.55) return (GameScreenState.InMatch, $"sân cỏ {grassRatio:P0}");
 
-        if (grassRatio >= 0.33)
+        int darkBar = 0;
+        for (int x = 5; x < 155; x += 4) { var c = t.GetPixel(x, 87); if (Math.Max(c.R, Math.Max(c.G, c.B)) < 60) darkBar++; }
+        if (darkBar >= 25 && grassRatio < 0.45)
         {
-            return (GameScreenState.InMatch, $"Sân cỏ chiếm {grassRatio:P0}");
+            int dark = 0, m = 0;
+            for (int y = 25; y < 50; y++)
+                for (int x = 50; x < 110; x++) { m++; var c = t.GetPixel(x, y); if (Math.Max(c.R, Math.Max(c.G, c.B)) < 60) dark++; }
+            double centerDark = (double)dark / m;
+            return centerDark >= 0.6
+                ? (GameScreenState.ModeRank, $"màn chọn chế độ (tối giữa {centerDark:P0})")
+                : (GameScreenState.Lobby, $"màn hình chính (thanh tab tối, tối giữa {centerDark:P0})");
         }
-
-        // ----------------------------------------------------------------
-        // 3. Lobby detection
-        //    - Bottom navigation bar (Y ~86-89) is very dark (dark gray ~#1a1a1a)
-        //    - Grass is visible in upper background (5-33%)
-        //    - Center has a dark rounded popup panel
-        // ----------------------------------------------------------------
-        int darkBottomCount = 0;
-        for (int x = 5; x < 155; x += 4)
-        {
-            var c = thumb.GetPixel(x, 87);
-            if (c.R < 60 && c.G < 60 && c.B < 60) darkBottomCount++;
-        }
-
-        // Check for dark panel in center (Lobby popup: X 25-135, Y 40-80)
-        int darkPanelCount = 0;
-        for (int y = 42; y < 80; y += 3)
-        {
-            for (int x = 25; x < 135; x += 3)
-            {
-                var c = thumb.GetPixel(x, y);
-                if (c.R < 55 && c.G < 55 && c.B < 55) darkPanelCount++;
-            }
-        }
-
-        if (grassRatio >= 0.05 && grassRatio < 0.33 && (darkBottomCount >= 12 || darkPanelCount >= 15))
-        {
-            return (GameScreenState.Lobby,
-                $"Sảnh PVP (cỏ={grassRatio:P0}, navBar={darkBottomCount}, panel={darkPanelCount})");
-        }
-
-        // ----------------------------------------------------------------
-        // 4. PostMatch: dark result screen / card reveal (very low grass)
-        // ----------------------------------------------------------------
-        if (grassRatio < 0.08)
-        {
-            return (GameScreenState.PostMatch, $"Màn hình kết quả/thưởng (cỏ={grassRatio:P0})");
-        }
-
-        return (GameScreenState.Unknown, $"Chưa xác định (cỏ={grassRatio:P0}, navBar={darkBottomCount})");
+        return (GameScreenState.Unknown, $"chưa rõ (cỏ {grassRatio:P0}, thanh tab {darkBar})");
     }
 }
 

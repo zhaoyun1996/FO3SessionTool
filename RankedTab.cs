@@ -76,7 +76,8 @@ public sealed class RankedTab : UserControl
         {
             var name = screen switch
             {
-                GameScreenState.Lobby => "Sảnh Xếp Hạng 1vs1",
+                GameScreenState.Lobby => "Màn hình chính (tab PVP...)",
+                GameScreenState.ModeRank => "Chọn chế độ Xếp hạng",
                 GameScreenState.ReadyScreen => "Màn hình Sẵn Sàng (Nút vàng)",
                 GameScreenState.InMatch => "Trong trận đấu (Đang đá)",
                 GameScreenState.PostMatch => "Hết trận / Nhận thưởng",
@@ -230,7 +231,8 @@ public sealed class RankedTab : UserControl
         var (screen, detail) = RankedAutoRunner.DetectScreenPublic(hWnd);
         string name = screen switch
         {
-            GameScreenState.Lobby       => "🟡 Sảnh Xếp Hạng 1vs1",
+            GameScreenState.Lobby       => "🟡 Màn hình chính (tab PVP...)",
+            GameScreenState.ModeRank    => "🟠 Chọn chế độ Xếp hạng",
             GameScreenState.ReadyScreen => "🟢 Màn hình Chuẩn bị / Sẵn sàng",
             GameScreenState.InMatch     => "⚽ Trong trận đấu (Đang đá)",
             GameScreenState.PostMatch   => "🏆 Hết trận / Nhận thưởng",
