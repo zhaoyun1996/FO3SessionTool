@@ -36,10 +36,8 @@ public sealed class MainForm : Form
     private KhoTab _kho = null!;
     private TabPage _tabKho = null!;
     private BuyTab _buy = null!;
-    private RankingTab _rank = null!;
     private LeagueTab _league = null!;
     private TabPage _tabLeague = null!;
-    private TabPage _tabRank = null!;
     private CancellationTokenSource? _upCts;
 
     public MainForm(Config cfg)
@@ -114,18 +112,14 @@ public sealed class MainForm : Form
         _buy = new BuyTab(() => _api, async () => _sprite ??= await _players.LoadImageAsync(PlayerSearch.SpriteUrl) as Bitmap, _players, () => _upCts != null || _trading || _league.Running, Log);
         var tabBuy = new TabPage("Mua cầu thủ") { Padding = new Padding(0, Theme.Gap, 0, 0) };
         tabBuy.Controls.Add(_buy);
-        _rank = new RankingTab(() => _api, Log);
-        _tabRank = new TabPage("Xếp hạng") { Padding = new Padding(0, Theme.Gap, 0, 0) };
-        _tabRank.Controls.Add(_rank);
         _tabs.TabPages.Add(_tabUpgrade);
         _tabs.TabPages.Add(tabBuy);
         _tabs.TabPages.Add(_tabKho);
-        _tabs.TabPages.Add(_tabRank);
         _league = new LeagueTab(() => _api, () => _upCts != null || _trading || _buy.Running, Log);
         _tabLeague = new TabPage("Mùa giải") { Padding = new Padding(0, Theme.Gap, 0, 0) };
         _tabLeague.Controls.Add(_league);
         _tabs.TabPages.Add(_tabLeague);
-        _tabs.SelectedIndexChanged += async (_, _) => { if (_tabs.SelectedTab == _tabKho) await _kho.ReloadAsync(); else if (_tabs.SelectedTab == _tabRank) await _rank.ReloadAsync(); else if (_tabs.SelectedTab == _tabLeague) await _league.LoadAsync(); };
+        _tabs.SelectedIndexChanged += async (_, _) => { if (_tabs.SelectedTab == _tabKho) await _kho.ReloadAsync(); else if (_tabs.SelectedTab == _tabLeague) await _league.LoadAsync(); };
         _tabs.TabPages.Add(_tabFind);
 
         var logBox = new DarkGroup { Text = "Nhật ký", Dock = DockStyle.Fill, Padding = new Padding(8, 18, 8, 8) };
@@ -379,7 +373,6 @@ public sealed class MainForm : Form
         _upgrade.SetLoggedIn(false);
         _kho.SetLoggedIn(false);
         _buy.SetLoggedIn(false);
-        _rank.SetLoggedIn(false);
         _league.SetLoggedIn(false);
         _btnAuth.Text = "Đăng nhập";
         _acct.Text = "Chưa đăng nhập";

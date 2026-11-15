@@ -426,47 +426,6 @@ public sealed class GameApi
 
     public static string Trim(string s) => s.Length > 600 ? s[..600] + "..." : s;
 
-    // ---- ranking (read only: GET /ladder/my/info, /ladder/reward/info) ----------
-
-    public sealed record RankMode(string Name, string Division, int Elo, int HighElo, int Wins, int Losses, int Forfeits, int Rank);
-    public sealed record RankReward(string Division, string Items);
-    public sealed record Ranking(string Title, string Start, string Next, List<RankMode> Modes, int PlayedGames, int TotalWins, int HighElo, List<RankReward> Rewards);
-
-    private static readonly (string Key, string Name)[] RankModes =
-    {
-        ("ladder_pvp_1v1", "Xếp hạng 1v1"), ("ladder_pvp_2v2", "Xếp hạng 2v2"), ("ladder_pvp_3v3", "Xếp hạng 3v3"), ("ladder_mgr_pvp_1v1", "Quản lý 1v1"),
-    };
-
-    /// <summary>Season, this account's own standing per mode and the reward list per division. Only reads.</summary>
-    public async Task<Ranking> GetRankingAsync(CancellationToken ct = default)
-    {
-        var my = JsonNode.Parse(await GetAsync("/ladder/my/info", ct));
-        if (my?["ladder_total"] == null) throw new InvalidOperationException(my?["reason"]?.ToString() ?? "không đọc được xếp hạng");
-        var modes = new List<RankMode>();
-        foreach (var (key, name) in RankModes)
-        {
-            var m = my[key]; if (m == null) continue;
-            modes.Add(new RankMode(name, m["division"]?["name"]?.ToString() ?? "", m["elo"]?.GetValue<int>() ?? 0, m["highelo"]?.GetValue<int>() ?? 0,
-                m["wins"]?.GetValue<int>() ?? 0, m["losses"]?.GetValue<int>() ?? 0, m["forfeits"]?.GetValue<int>() ?? 0, m["rank"]?.GetValue<int>() ?? 0));
-        }
-        var tot = my["ladder_total"];
-        var rewards = new List<RankReward>();
-        try
-        {
-            var rw = JsonNode.Parse(await GetAsync("/ladder/reward/info", ct));
-            foreach (var d in rw?["divs"]?.AsArray() ?? new JsonArray())
-            {
-                var items = (d?["items"]?.AsArray() ?? new JsonArray()).Select(it =>
-                    (it?["staticdata"]?["name"]?.ToString() ?? ("#" + it?["itemid"])) + ((it?["count"]?.GetValue<int>() ?? 1) > 1 ? " x" + it!["count"] : ""));
-                rewards.Add(new RankReward(d?["name"]?.ToString() ?? "", string.Join(", ", items)));
-            }
-        }
-        catch (OperationCanceledException) { throw; }
-        catch { }
-        return new Ranking(my["title"]?.ToString() ?? "", my["start"]?.ToString() ?? "", my["next"]?.ToString() ?? "", modes,
-            tot?["playedgames"]?.GetValue<int>() ?? 0, tot?["totalwins"]?.GetValue<int>() ?? 0, tot?["highelo"]?.GetValue<int>() ?? 0, rewards);
-    }
-
     // ---- league mode (league2), endpoints observed in the game capture ----------
 
     public sealed record LeagueMe(int TeamId, int NextRound, int MaxRound);
