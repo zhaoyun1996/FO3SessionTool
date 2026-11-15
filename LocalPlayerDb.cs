@@ -248,7 +248,6 @@ public sealed class LocalPlayerDb
             if (Open("Crbb", out var nr, out var ns, out var nc, out var nd) && nd.TryGetValue("mCXg", out var nf))
                 for (int r = 0; r < nc; r++) national.Add(Int(nr, ns, r, nf));
             var names = new Dictionary<long, string>();
-            TeamNames = names;
             if (Open("lyxL", out var tr, out var ts, out var tc, out var td) && td.TryGetValue("mCXg", out var tid) && td.TryGetValue("AUsv", out var tname) && tname.Type == 0)
                 for (int r = 0; r < tc; r++)
                 {
@@ -256,6 +255,8 @@ public sealed class LocalPlayerDb
                     int z = Array.IndexOf(d, (byte)0, s0, len); if (z < 0) z = s0 + len;
                     names[Int(tr, ts, r, tid)] = Encoding.UTF8.GetString(d, s0, z - s0);
                 }
+            // the stored team id counts from 0 while the game (league2, matches) numbers teams from 1: Real Madrid is 242 here, 243 in league2/me
+            TeamNames = names.ToDictionary(k => k.Key + 1, k => k.Value);
             if (Open("RrqT", out var lr, out var ls, out var lc, out var ld) && ld.TryGetValue("mCXg", out var lteam) && ld.TryGetValue("voVf", out var lspid))
                 for (int r = 0; r < lc; r++)
                 {
