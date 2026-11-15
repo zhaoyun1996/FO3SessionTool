@@ -33,7 +33,8 @@ public sealed class RankedAutoRunner
         int CooldownSec,         // default ~8s
         Point? CustomMatchmakePos = null,
         int Tactic = 0,          // 0 = leave as is, 1..6 = tactic tab to select at the start of a match
-        int Formation = 0        // 0 = leave as is, 1..3 = lineup A, B, C on the lineup screen
+        int Formation = 0,       // 0 = leave as is, 1..3 = lineup A, B, C on the lineup screen
+        bool RealKeys = false    // Space for the "Bỏ qua" screens as a real key press (game brought to the front for a moment)
     );
 
     public event Action<string>? LogMessage;
@@ -142,8 +143,9 @@ public sealed class RankedAutoRunner
                 if (inMatch)
                 {
                     // Replays, close-ups and "Bỏ qua" cutscenes look nothing like the pitch view, so "the pitch is gone" does NOT mean the match is over.
-                    // It is over only when a screen that comes after a match is seen: Kết quả / reward buttons, the mode list, the menu.
-                    bool afterMatch = screen is GameScreenState.ReadyScreen or GameScreenState.ModeRank or GameScreenState.Lobby or GameScreenState.Searching;
+                    // The match is over only when the game is back on the mode list / menu (that is where it lands after the last reward screen).
+                    // The yellow-button screens (Kết quả, Nhận quà) are NOT used: they are clicked through but do not count.
+                    bool afterMatch = screen is GameScreenState.ModeRank or GameScreenState.Lobby;
                     if (!afterMatch) sinceNotMatch.Reset();
                     else if (!sinceNotMatch.IsRunning) sinceNotMatch.Restart();
                     if (cfg.MatchDurationSec > 0 && matchWatch.Elapsed.TotalSeconds > cfg.MatchDurationSec + 120)
@@ -209,7 +211,8 @@ public sealed class RankedAutoRunner
                             menuStep++;
                             step.Restart();
                             Log($"[Bỏ qua] Gửi phím Space (lần {menuStep}).");
-                            WinApi.SendKeyPress(hWnd, WinApi.VK_SPACE, 90);
+                            if (cfg.RealKeys) WinApi.SendRealKey(hWnd, WinApi.VK_SPACE);
+                            else WinApi.SendKeyPress(hWnd, WinApi.VK_SPACE, 90);
                         }
                         await Task.Delay(500, ct);
                         break;
@@ -550,6 +553,38 @@ public static class WinApi
             g.DrawImage(src, 0, 0, width, height);
         }
         return thumb;
+    }
+
+    [StructLayout(LayoutKind.Sequential)] private struct KI { public ushort vk; public ushort sc; public uint fl; public uint t; public UIntPtr ex; }
+    [StructLayout(LayoutKind.Explicit, Size = 32)] private struct IN { [FieldOffset(0)] public uint type; [FieldOffset(8)] public KI ki; }
+    [DllImport("user32.dll")] private static extern uint SendInput(uint n, IN[] i, int cb);
+    [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags);
+    [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr h, out RECT r);
+
+    /// <summary>A real key press (SendInput): the game is brought to the front for a moment and the previous window is restored afterwards.</summary>
+    public static void SendRealKey(IntPtr hWnd, ushort vk)
+    {
+        var prev = GetForegroundWindow();
+        ActivateWindow(hWnd);
+        Thread.Sleep(250);
+        ushort sc = (ushort)MapVirtualKey(vk, 0);
+        var down = new IN[1]; down[0].type = 1; down[0].ki.vk = vk; down[0].ki.sc = sc;
+        var up = new IN[1]; up[0].type = 1; up[0].ki.vk = vk; up[0].ki.sc = sc; up[0].ki.fl = 2;
+        SendInput(1, down, Marshal.SizeOf<IN>());
+        Thread.Sleep(80);
+        SendInput(1, up, Marshal.SizeOf<IN>());
+        Thread.Sleep(120);
+        if (prev != IntPtr.Zero && prev != hWnd) SetForegroundWindow(prev);
+    }
+
+    /// <summary>Resizes the game window so that its client area (the drawn part) is width x height. Returns false if the window did not take it.</summary>
+    public static bool SetClientSize(IntPtr hWnd, int width, int height)
+    {
+        if (hWnd == IntPtr.Zero || !GetWindowRect(hWnd, out RECT w) || !GetClientRect(hWnd, out RECT c)) return false;
+        int extraW = w.Width - c.Width, extraH = w.Height - c.Height;
+        SetWindowPos(hWnd, IntPtr.Zero, 0, 0, width + extraW, height + extraH, 0x0002 | 0x0004 | 0x0010);   // NOMOVE | NOZORDER | NOACTIVATE
+        Thread.Sleep(300);
+        return GetClientRect(hWnd, out RECT n) && Math.Abs(n.Width - width) <= 2 && Math.Abs(n.Height - height) <= 2;
     }
 
     public static void ActivateWindow(IntPtr hWnd)

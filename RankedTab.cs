@@ -17,6 +17,9 @@ public sealed class RankedTab : UserControl
     private readonly DarkNumber _numMatches = new() { Minimum = 0, Maximum = 1000, Width = 90 };
     private readonly DarkNumber _numCooldown = new() { Minimum = 0, Maximum = 120, Width = 90 };
     private readonly DarkCombo _formation = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 190 };
+    private readonly DarkCheck _realKeys = new() { Text = "Dùng phím thật cho Space (game nhảy lên trước 1 giây)", Width = 400, Height = 24 };
+    private readonly DarkCombo _size = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 190 };
+    private readonly DarkButton _btnSize = new() { Text = "Đổi khung hình", Width = 150 };
     private readonly DarkCombo _tactic = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 190 };
 
     private readonly DarkButton _btnStart = new() { Text = "Bắt đầu (F9)", Width = 170, Height = 40, Font = Theme.Bold, Tag = "primary" };
@@ -40,6 +43,8 @@ public sealed class RankedTab : UserControl
         _tactic.SelectedIndex = 0;
         _formation.Items.AddRange(new object[] { "Giữ nguyên", "Đội hình A", "Đội hình B", "Đội hình C" });
         _formation.SelectedIndex = 0;
+        _size.Items.AddRange(new object[] { "1280 x 720", "1366 x 768", "1600 x 900", "1920 x 1080" });
+        _size.SelectedIndex = 2;
 
         BuildLayout();
 
@@ -51,6 +56,7 @@ public sealed class RankedTab : UserControl
 
         _btnStart.Click += (_, _) => StartAuto();
         _btnStop.Click += (_, _) => StopAuto();
+        _btnSize.Click += (_, _) => ResizeGame();
         _timer.Tick += (_, _) => CheckGame();
         _timer.Start();
         CheckGame();
@@ -101,6 +107,9 @@ public sealed class RankedTab : UserControl
         Row("Sơ đồ trước trận", _formation);
         Row("Chiến thuật trong trận", _tactic);
         Row("Nghỉ giữa 2 trận (giây)", _numCooldown);
+        Row("Khung hình game", SizeRow());
+        grid.Controls.Add(new Label());
+        grid.Controls.Add(_realKeys);
         grp.Controls.Add(grid);
         root.Controls.Add(grp, 0, 1);
 
@@ -113,6 +122,27 @@ public sealed class RankedTab : UserControl
         root.Controls.Add(act, 0, 2);
 
         Controls.Add(root);
+    }
+
+    private Control SizeRow()
+    {
+        var p = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = Padding.Empty };
+        _size.Margin = new Padding(0, 0, 8, 0);
+        _btnSize.Margin = Padding.Empty;
+        p.Controls.Add(_size);
+        p.Controls.Add(_btnSize);
+        return p;
+    }
+
+    private void ResizeGame()
+    {
+        var h = WinApi.FindGameWindow();
+        if (h == IntPtr.Zero) { MessageBox.Show("Chưa thấy cửa sổ game.", "Khung hình", MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
+        var parts = ((string)_size.SelectedItem!).Split('x', StringSplitOptions.TrimEntries);
+        int w = int.Parse(parts[0]), hh = int.Parse(parts[1]);
+        bool ok = WinApi.SetClientSize(h, w, hh);
+        _log(ok ? $"[Giả lập XH] Đã đổi khung hình game thành {w}x{hh}." : $"[Giả lập XH] Game không nhận kích thước {w}x{hh} (có thể game chỉ cho vài kích thước cố định, hoặc cửa sổ bị khoá).");
+        CheckGame();
     }
 
     private void CheckGame()
@@ -132,7 +162,7 @@ public sealed class RankedTab : UserControl
 
     private void SetEditable(bool on)
     {
-        _numMatches.Enabled = _numCooldown.Enabled = _tactic.Enabled = _formation.Enabled = on;
+        _numMatches.Enabled = _numCooldown.Enabled = _tactic.Enabled = _formation.Enabled = _realKeys.Enabled = on;
         _btnStart.Enabled = on;
         _btnStop.Enabled = !on;
     }
@@ -145,7 +175,7 @@ public sealed class RankedTab : UserControl
             MessageBox.Show("Chưa thấy cửa sổ game FIFA Online 3 (fifazf.exe). Hãy mở game ở chế độ cửa sổ trước.", "Giả lập xếp hạng", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
-        var settings = new RankedAutoRunner.Settings((int)_numMatches.Value, 15 * 60, 60, 30, (int)_numCooldown.Value, null, _tactic.SelectedIndex, _formation.SelectedIndex);
+        var settings = new RankedAutoRunner.Settings((int)_numMatches.Value, 15 * 60, 60, 30, (int)_numCooldown.Value, null, _tactic.SelectedIndex, _formation.SelectedIndex, _realKeys.Checked);
         SetEditable(false);
         _runner.Start(settings);
     }

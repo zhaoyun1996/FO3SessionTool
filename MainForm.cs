@@ -16,6 +16,10 @@ public sealed class MainForm : Form
     private readonly System.Windows.Forms.Timer _pingTimer = new() { Interval = 10 * 60_000 };
     private readonly DarkButton _btnAuth = new() { Text = "Đăng nhập", Width = 110, Anchor = AnchorStyles.Right };
 
+    private readonly DarkButton _btnTabs = new() { Text = "⚙", Width = 40, Anchor = AnchorStyles.Right, Margin = new Padding(3, 3, 0, 3) };
+    private TabPage[] _tabOrder = Array.Empty<TabPage>();
+    private readonly HashSet<string> _hiddenTabs = new();
+    private bool _applyingTabs;
     private readonly DarkTabControl _tabs = new() { Dock = DockStyle.Fill, Margin = new Padding(0, 0, 0, Theme.Gap) };
 
     // --- tab "Tìm kiếm cầu thủ"
@@ -79,16 +83,19 @@ public sealed class MainForm : Form
 
         // Account bar: status on the left, Đăng nhập / Đăng xuất on the right.
         var bar = new TableLayoutPanel { Dock = DockStyle.Top, ColumnCount = 2, RowCount = 1, AutoSize = true, Padding = new Padding(0, 0, 0, Theme.Gap) };
-        bar.ColumnCount = 4;
+        bar.ColumnCount = 5;
         bar.ColumnStyles.Clear();
         bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         bar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         bar.Controls.Add(_acct, 0, 0);
         bar.Controls.Add(_wallet, 1, 0);
         bar.Controls.Add(_btnFromGame, 2, 0);
         bar.Controls.Add(_btnAuth, 3, 0);
+        bar.Controls.Add(_btnTabs, 4, 0);
+        _btnTabs.Click += (_, _) => ShowTabMenu();
 
         _tabFind = new TabPage("Tìm kiếm cầu thủ") { Padding = new Padding(0, Theme.Gap, 0, 0) };
         _tabFind.Controls.Add(BuildFindTab());
@@ -115,7 +122,7 @@ public sealed class MainForm : Form
         var tabBuy = new TabPage("Mua cầu thủ") { Padding = new Padding(0, Theme.Gap, 0, 0) };
         tabBuy.Controls.Add(_buy);
         _ranked = new RankedTab(Log);
-        _tabRanked = new TabPage("Auto Xếp hạng") { Padding = new Padding(0, Theme.Gap, 0, 0) };
+        _tabRanked = new TabPage("Giả lập xếp hạng") { Padding = new Padding(0, Theme.Gap, 0, 0) };
         _tabRanked.Controls.Add(_ranked);
         _tabs.TabPages.Add(_tabUpgrade);
         _tabs.TabPages.Add(tabBuy);
@@ -125,8 +132,11 @@ public sealed class MainForm : Form
         _tabLeague = new TabPage("Mùa giải") { Padding = new Padding(0, Theme.Gap, 0, 0) };
         _tabLeague.Controls.Add(_league);
         _tabs.TabPages.Add(_tabLeague);
-        _tabs.SelectedIndexChanged += async (_, _) => { if (_tabs.SelectedTab == _tabKho) await _kho.ReloadAsync(); else if (_tabs.SelectedTab == _tabLeague) await _league.LoadAsync(); };
+        _tabs.SelectedIndexChanged += async (_, _) => { if (_applyingTabs) return; if (_tabs.SelectedTab == _tabKho) await _kho.ReloadAsync(); else if (_tabs.SelectedTab == _tabLeague) await _league.LoadAsync(); };
         _tabs.TabPages.Add(_tabFind);
+        _tabOrder = new[] { _tabUpgrade, tabBuy, _tabKho, _tabRanked, _tabLeague, _tabFind };
+        LoadHiddenTabs();
+        ApplyTabs();
 
         var logBox = new DarkGroup { Text = "Nhật ký", Dock = DockStyle.Fill, Padding = new Padding(8, 18, 8, 8) };
         _log.Margin = Padding.Empty;
@@ -733,6 +743,56 @@ public sealed class MainForm : Form
     }
 
     public Task UpgradeSearchAsync(string name) => _upgrade.SearchAsync(name);
+    private static string TabsFile => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "FO3SessionTool", "tabs.json");
+
+    private void LoadHiddenTabs()
+    {
+        try { foreach (var n in System.Text.Json.JsonSerializer.Deserialize<List<string>>(File.ReadAllText(TabsFile)) ?? new()) _hiddenTabs.Add(n); }
+        catch { }
+    }
+
+    private void SaveHiddenTabs()
+    {
+        try { Directory.CreateDirectory(Path.GetDirectoryName(TabsFile)!); File.WriteAllText(TabsFile, System.Text.Json.JsonSerializer.Serialize(_hiddenTabs.ToList())); }
+        catch { }
+    }
+
+    /// <summary>Shows the pages that are not hidden, in the fixed order.</summary>
+    private void ApplyTabs()
+    {
+        _applyingTabs = true;
+        try
+        {
+            var keep = _tabs.SelectedTab;
+            _tabs.TabPages.Clear();
+            foreach (var p in _tabOrder) if (!_hiddenTabs.Contains(p.Text)) _tabs.TabPages.Add(p);
+            if (keep != null && _tabs.TabPages.Contains(keep)) _tabs.SelectedTab = keep;
+        }
+        finally { _applyingTabs = false; }
+    }
+
+    private void ShowTabMenu()
+    {
+        var menu = new ContextMenuStrip { ShowCheckMargin = true, ShowImageMargin = false, BackColor = Theme.Surface2, ForeColor = Theme.Text, Font = Theme.Body };
+        foreach (var p in _tabOrder)
+        {
+            var page = p;
+            var item = new ToolStripMenuItem(page.Text) { Checked = !_hiddenTabs.Contains(page.Text), CheckOnClick = true, BackColor = Theme.Surface2, ForeColor = Theme.Text };
+            item.CheckedChanged += (_, _) =>
+            {
+                if (item.Checked) _hiddenTabs.Remove(page.Text);
+                else if (_tabOrder.Count(x => !_hiddenTabs.Contains(x.Text)) > 1) _hiddenTabs.Add(page.Text);
+                else { item.Checked = true; return; }   // at least one tab stays
+                SaveHiddenTabs();
+                ApplyTabs();
+            };
+            menu.Items.Add(item);
+        }
+        // keep the menu open while ticking several tabs
+        menu.Closing += (_, e) => { if (e.CloseReason == ToolStripDropDownCloseReason.ItemClicked) e.Cancel = true; };
+        menu.Show(_btnTabs, new Point(_btnTabs.Width - menu.PreferredSize.Width, _btnTabs.Height));
+    }
+
     public void ShowTab(int index) => _tabs.SelectedIndex = index;
 
     // ---- helpers --------------------------------------------------------
