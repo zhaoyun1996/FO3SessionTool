@@ -65,7 +65,7 @@ public sealed class PlayerSearch : IDisposable
     }
 
     /// <summary>Icons the site's badged.png lacks, taken from another sprite and appended to the right of it as extra 18x18 cells.
-    /// Season 40 uses the "NHD" icon (first row, x = 396) of the 36x36 grid in this sprite.</summary>
+    /// Season 40 uses the "NHD" icon (14th of the first row, x = 390) of the 30x24 cell grid in this sprite.</summary>
     private const string ExtraSpriteUrl = "https://fifaaddict.com/ffaddv2/img/892f78a.png";
 
     private async Task<Image> AddExtraIconsAsync(Image sprite, CancellationToken ct)
@@ -82,7 +82,10 @@ public sealed class PlayerSearch : IDisposable
             {
                 g.DrawImage(plain, 0, 0, plain.Width, plain.Height);
                 g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
-                g.DrawImage(extra, new Rectangle(x, 0, 18, 18), new Rectangle(11 * 36, 0, 36, 36), GraphicsUnit.Pixel);
+                // the sheet is a grid of 30x24 cells (18 columns): NHD is the 14th of the first row; keep its proportions inside the 18x18 cell
+                using var ia = new System.Drawing.Imaging.ImageAttributes();
+                ia.SetWrapMode(System.Drawing.Drawing2D.WrapMode.TileFlipXY);
+                g.DrawImage(extra, new Rectangle(x, 2, 18, 14), 13 * 30, 0, 30, 24, GraphicsUnit.Pixel, ia);
             }
             SeasonSpriteX[40] = x;
             plain.Dispose();
