@@ -21,7 +21,7 @@ public sealed class LeagueTab : UserControl
     {
         _api = api; _otherBusy = otherBusy; _log = log;
         Dock = DockStyle.Fill;
-        _pace.Items.AddRange(new object[] { "Chậm (×1.8)", "Bình thường", "Nhanh (×0.5)", "Rất nhanh (×0.25)" });
+        _pace.Items.AddRange(new object[] { "Chậm, thong thả (×1.8)", "Bình thường (×1)", "Nhanh (×0.5)", "Rất nhanh (×0.25)" });
         _pace.SelectedIndex = 1;
 
         var col = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(4) };

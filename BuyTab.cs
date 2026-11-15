@@ -51,12 +51,12 @@ public sealed class BuyTab : UserControl
 
         _season.Items.Add("Mọi mùa");
         _pos.Items.AddRange(new object[] { "Mọi vị trí", "Thủ môn", "Hậu vệ", "Tiền vệ", "Tiền đạo" });
-        _pace.Items.AddRange(new object[] { "Chậm (×1.8)", "Bình thường", "Nhanh (×0.5)", "Rất nhanh (×0.25)" });
+        _pace.Items.AddRange(new object[] { "Chậm, thong thả (×1.8)", "Bình thường (×1)", "Nhanh (×0.5)", "Rất nhanh (×0.25)" });
         for (int g = 1; g <= 13; g++) { _gFrom.Items.Add("+" + g); _gTo.Items.Add("+" + g); }
         _gFrom.SelectedIndex = 0; _gTo.SelectedIndex = 0;
         _gFrom.SelectedIndexChanged += (_, _) => { if (_gSync) return; _gSync = true; if (_gTo.SelectedIndex < _gFrom.SelectedIndex) _gTo.SelectedIndex = _gFrom.SelectedIndex; _gSync = false; };
         _gTo.SelectedIndexChanged += (_, _) => { if (_gSync) return; _gSync = true; if (_gFrom.SelectedIndex > _gTo.SelectedIndex) _gFrom.SelectedIndex = _gTo.SelectedIndex; _gSync = false; };
-        _season.SelectedIndex = 0; _pos.SelectedIndex = 0; _pace.SelectedIndex = 0;
+        _season.SelectedIndex = 0; _pos.SelectedIndex = 0; _pace.SelectedIndex = 1;
         _floorEp.Value = 0; _maxPrice.Value = 0; _maxCards.Value = 0;
 
         var filters = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = false, Padding = new Padding(0, 0, 0, 4) };

@@ -42,10 +42,11 @@ public sealed class UpgradeTab : UserControl
     private readonly DarkRadio _runLoop = new() { Text = "Xoay vòng", Margin = new Padding(3, 5, 3, 5) };
     private readonly DarkCombo _outMode = new() { DropDownStyle = ComboBoxStyle.DropDownList, Anchor = AnchorStyles.Left, Width = 190 };
     private bool _outBusy;
+    private bool _outLoopShown;
     private bool OutSell => _outMode.SelectedIndex == 1;
     private bool OutKeep => _runLoop.Checked && !StockMode && _outMode.SelectedIndex == 2;
-    private readonly DarkRadio _collectAuto = new() { Text = "Tự động", Checked = true };
-    private readonly DarkRadio _collectManual = new() { Text = "Thủ công", Margin = new Padding(3, 5, 3, 5) };
+    private readonly DarkRadio _collectAuto = new() { Text = "Tự động" };
+    private readonly DarkRadio _collectManual = new() { Text = "Thủ công", Checked = true, Margin = new Padding(3, 5, 3, 5) };
     private readonly Label _outLabel = new() { Text = "Khi ép đủ mức", AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Margin = new Padding(3, 0, 8, 0), Visible = false };
     private readonly Label _collectLabel = new() { Text = "Nhận tiền bán", AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Margin = new Padding(3, 0, 8, 0), Visible = false };
     private readonly DarkNumber _tradeMin = new() { Minimum = 1, Maximum = 1_000_000_000, Value = 900_000_000, ThousandsSeparator = true, Increment = 10_000_000, Anchor = AnchorStyles.Left, Width = 160 };
@@ -597,6 +598,8 @@ public sealed class UpgradeTab : UserControl
         _outLabel.Text = loopNow ? "Khi ép đủ mức" : "Khi ép xong";
         // the choices depend on the mode: loop = trade / sell / do nothing, one-shot = keep / sell
         int keepIdx = _outMode.SelectedIndex;
+        if (loopNow != _outLoopShown) keepIdx = loopNow ? 2 : 0;   // default of each mode: do nothing (keep the cards)
+        _outLoopShown = loopNow;
         _outBusy = true;
         _outMode.Items.Clear();
         if (loopNow) _outMode.Items.AddRange(new object[] { "Giao dịch", "Bán thị trường", "Không làm gì" });
