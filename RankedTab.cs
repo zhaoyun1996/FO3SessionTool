@@ -15,8 +15,8 @@ public sealed class RankedTab : UserControl
     private readonly Label _lblProgress = new() { AutoSize = true, Font = Theme.Bold, Text = "Tiến độ: 0 trận", ForeColor = Theme.Accent };
 
     private readonly DarkNumber _numMatches = new() { Minimum = 0, Maximum = 1000, Width = 90 };
-    private readonly DarkNumber _numMinutes = new() { Minimum = 1, Maximum = 30, Width = 90 };
     private readonly DarkNumber _numCooldown = new() { Minimum = 0, Maximum = 120, Width = 90 };
+    private readonly DarkCombo _formation = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 190 };
     private readonly DarkCombo _tactic = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 190 };
 
     private readonly DarkButton _btnStart = new() { Text = "Bắt đầu (F9)", Width = 170, Height = 40, Font = Theme.Bold, Tag = "primary" };
@@ -35,10 +35,11 @@ public sealed class RankedTab : UserControl
         Font = Theme.Body;
 
         _numMatches.Value = 10;
-        _numMinutes.Value = 8;
         _numCooldown.Value = 8;
         _tactic.Items.AddRange(new object[] { "Giữ nguyên", "Chiến thuật 1", "Chiến thuật 2", "Chiến thuật 3", "Chiến thuật 4", "Chiến thuật 5", "Chiến thuật 6" });
         _tactic.SelectedIndex = 0;
+        _formation.Items.AddRange(new object[] { "Giữ nguyên", "Đội hình A", "Đội hình B", "Đội hình C" });
+        _formation.SelectedIndex = 0;
 
         BuildLayout();
 
@@ -97,8 +98,8 @@ public sealed class RankedTab : UserControl
             grid.Controls.Add(c);
         }
         Row("Số trận (0 = chạy mãi)", _numMatches);
+        Row("Sơ đồ trước trận", _formation);
         Row("Chiến thuật trong trận", _tactic);
-        Row("Tối đa mỗi trận (phút)", _numMinutes);
         Row("Nghỉ giữa 2 trận (giây)", _numCooldown);
         grp.Controls.Add(grid);
         root.Controls.Add(grp, 0, 1);
@@ -131,7 +132,7 @@ public sealed class RankedTab : UserControl
 
     private void SetEditable(bool on)
     {
-        _numMatches.Enabled = _numMinutes.Enabled = _numCooldown.Enabled = _tactic.Enabled = on;
+        _numMatches.Enabled = _numCooldown.Enabled = _tactic.Enabled = _formation.Enabled = on;
         _btnStart.Enabled = on;
         _btnStop.Enabled = !on;
     }
@@ -144,7 +145,7 @@ public sealed class RankedTab : UserControl
             MessageBox.Show("Chưa thấy cửa sổ game FIFA Online 3 (fifazf.exe). Hãy mở game ở chế độ cửa sổ trước.", "Giả lập xếp hạng", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
-        var settings = new RankedAutoRunner.Settings((int)_numMatches.Value, (int)_numMinutes.Value * 60, 60, 30, (int)_numCooldown.Value, null, _tactic.SelectedIndex);
+        var settings = new RankedAutoRunner.Settings((int)_numMatches.Value, 15 * 60, 60, 30, (int)_numCooldown.Value, null, _tactic.SelectedIndex, _formation.SelectedIndex);
         SetEditable(false);
         _runner.Start(settings);
     }

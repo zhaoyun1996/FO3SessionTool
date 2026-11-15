@@ -32,7 +32,8 @@ public sealed class RankedAutoRunner
         int PostMatchSec,        // default ~30s
         int CooldownSec,         // default ~8s
         Point? CustomMatchmakePos = null,
-        int Tactic = 0           // 0 = leave as is, 1..6 = tactic tab to select at the start of a match
+        int Tactic = 0,          // 0 = leave as is, 1..6 = tactic tab to select at the start of a match
+        int Formation = 0        // 0 = leave as is, 1..3 = lineup A, B, C on the lineup screen
     );
 
     public event Action<string>? LogMessage;
@@ -69,6 +70,9 @@ public sealed class RankedAutoRunner
     // tactic tabs 1..6 along the bottom panel in the match (measured on a 1600x900 client)
     private static readonly double[] TacticTabX = { 0.198, 0.3125, 0.428, 0.541, 0.656, 0.7725 };
     private const double TacticTabY = 0.896;
+    // lineup screen: the "Đội hình B ▲" button and the A / B / C entries of the menu it opens upwards (measured on a screenshot of the open menu)
+    private const double FormationBtnX = 0.443, FormationBtnY = 0.903, FormationItemX = 0.451;
+    private static readonly double[] FormationItemY = { 0.780, 0.817, 0.853 };
     private const double ReadyX = 0.795, ReadyY = 0.966;        // "Sẵn sàng" (lineup screen and pre-match screen)
 
     private async Task RunAdaptiveLoopAsync(Settings cfg, CancellationToken ct)
@@ -91,6 +95,7 @@ public sealed class RankedAutoRunner
             var step = new Stopwatch(); step.Start();
             int menuStep = 0;
             int tacticClicks = 0;
+            bool needFormation = false;
             GameScreenState last = GameScreenState.Unknown;
 
             while (!ct.IsCancellationRequested)
@@ -166,6 +171,16 @@ public sealed class RankedAutoRunner
                 switch (screen)
                 {
                     case GameScreenState.ReadyScreen:
+                        if (needFormation && !inMatch)
+                        {
+                            needFormation = false;
+                            Log($"[Sơ đồ] Chọn Đội hình {"ABC"[cfg.Formation - 1]}.");
+                            WinApi.ClickClientPercentBackground(hWnd, FormationBtnX, FormationBtnY);
+                            await Task.Delay(600, ct);
+                            WinApi.ClickClientPercentBackground(hWnd, FormationItemX, FormationItemY[cfg.Formation - 1]);
+                            await Task.Delay(800, ct);
+                            break;
+                        }
                         StateChanged?.Invoke("Bấm Sẵn sàng...");
                         if (menuStep == 0 || step.Elapsed.TotalSeconds >= 2)
                         {
@@ -177,6 +192,7 @@ public sealed class RankedAutoRunner
                         break;
 
                     case GameScreenState.Searching:
+                        needFormation = cfg.Formation is >= 1 and <= 3;   // the next yellow-button screen is the lineup screen
                         StateChanged?.Invoke($"Đang tìm trận ({(int)step.Elapsed.TotalSeconds}s)...");
                         if (cfg.MatchmakeTimeoutSec > 0 && step.Elapsed.TotalSeconds > cfg.MatchmakeTimeoutSec && menuStep == 0)
                         {
