@@ -19,7 +19,7 @@ public static class PlayerNames
     public static async Task<string> DescribeAsync(long spid, string? knownName = null)
     {
         int season = (int)(spid / 1_000_000);
-        string label = "";
+        string label = "", club = "";
         string name = knownName ?? "";
         if (_search != null)
         {
@@ -31,12 +31,14 @@ public static class PlayerNames
                     if (name.Length == 0) name = d.Name;
                     label = d.SeasonLabel;
                     season = d.Season;
+                    club = d.Club;
                 }
             }
             catch { }
             if (label.Length == 0) label = _search.SeasonLabelOf(season);
         }
         if (label.Length == 0) label = $"Mùa {season}";
+        if (club.Length > 0) label = $"Mùa {season} · {club}";   // the game's own data decides: its team name, not the website's season label
         return name.Length > 0 ? $"{name} ({label})" : $"cầu thủ {label} (SPID {spid})";
     }
 }

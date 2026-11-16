@@ -10,7 +10,7 @@ public sealed record PosRating(string Pos, string Group, int Rating, bool Active
 public sealed record PlayerInfo(
     long Spid, string Name, int Season, string Position, bool Limited,
     int Overall, int[] Stats, long PriceKr, long PriceVn, string ImageUrl,
-    IReadOnlyList<PosRating> Positions, int SkillMoves);
+    IReadOnlyList<PosRating> Positions, int SkillMoves, string Team = "");
 
 /// <summary>The minimum profile shown on the upgrade tab (from fo3player.php?id=SPID).</summary>
 public sealed record PlayerDetail(
@@ -51,39 +51,50 @@ public sealed class PlayerSearch : IDisposable
         var url = "https://en.fifaaddict.com/fo3db.php?q=player&name=" + Uri.EscapeDataString(name);
         var html = await _http.GetStringAsync(url, ct);
         var found = Parse(html).Where(p => p.Season != 0 && p.Spid / 1_000_000 != 0).ToList();   // season 0 (base cards) is never offered
-        return await AddOtherSeasonsAsync(found);
+        return await GameFirstAsync(found);
     }
 
-    /// <summary>fifaaddict lacks some seasons (e.g. season 26). For every player found, the cards that share the last six digits of the SPID and the birth date
-    /// are read from the game's own files and added when missing, so a card the account owns is never missed because the site does not list it.</summary>
-    private async Task<List<PlayerInfo>> AddOtherSeasonsAsync(List<PlayerInfo> found)
+    /// <summary>
+    /// The game's own files decide: overall, stats, positions and team come from data_0.big (fifaaddict only gives the name, which the files lack);
+    /// cards the files do not have, or only as a placeholder (overall 1), are dropped; and the other seasons of the same player (same last six digits of
+    /// the SPID and birth date) are added when fifaaddict does not list them. Without the game files the site's list is returned as it is.
+    /// </summary>
+    private async Task<List<PlayerInfo>> GameFirstAsync(List<PlayerInfo> found)
     {
         try
         {
             var db = await LocalPlayerDb.GetAsync();
             if (db == null || found.Count == 0) return found;
-            var have = found.Select(f => f.Spid).ToHashSet();
-            var added = new List<PlayerInfo>();
-            foreach (var p in found.ToList())
+            var result = new List<PlayerInfo>();
+            var have = new HashSet<long>();
+            foreach (var p in found)
+            {
+                var row = db.Find(p.Spid);
+                if (row == null || row.Overall <= 1) continue;
+                if (have.Add(p.Spid)) result.Add(FromGame(db, row, p.Name, p.Limited, p.PriceKr, p.PriceVn));
+            }
+            foreach (var p in found)
             {
                 var row = db.Find(p.Spid);
                 if (row == null) continue;
                 foreach (var sib in db.Siblings(row))
                 {
-                    int season = (int)(sib.Spid / 1_000_000);
-                    if (season == 0 || !have.Add(sib.Spid)) continue;
-                    var d = db.ToDetail(sib);
-                    var positions = d.Positions.ToList();
-                    added.Add(new PlayerInfo(sib.Spid, p.Name, season, positions.FirstOrDefault()?.Pos ?? "", false, sib.Overall + StatBonus,
-                        new[] { sib.Finishing, sib.Sprint, sib.Strength, sib.Dribbling, sib.Stamina }.Select(v => v + StatBonus).ToArray(),
-                        0, 0, d.ImageUrl, positions, d.SkillMoves));
+                    if (sib.Spid / 1_000_000 == 0 || sib.Overall <= 1 || !have.Add(sib.Spid)) continue;
+                    result.Add(FromGame(db, sib, p.Name, false, 0, 0));
                 }
             }
-            if (added.Count == 0) return found;
-            found.AddRange(added.OrderBy(a => a.Name).ThenBy(a => a.Season));
+            return result.OrderBy(r => r.Name).ThenBy(r => r.Season).ToList();
         }
-        catch { }
-        return found;
+        catch { return found; }
+    }
+
+    private static PlayerInfo FromGame(LocalPlayerDb db, LocalPlayerDb.Row row, string name, bool limited, long priceKr, long priceVn)
+    {
+        var d = db.ToDetail(row);
+        var positions = d.Positions.ToList();
+        return new PlayerInfo(row.Spid, name, (int)(row.Spid / 1_000_000), positions.FirstOrDefault()?.Pos ?? "", limited, row.Overall + StatBonus,
+            new[] { row.Finishing, row.Sprint, row.Strength, row.Dribbling, row.Stamina }.Select(v => v + StatBonus).ToArray(),
+            priceKr, priceVn, d.ImageUrl, positions, d.SkillMoves, db.ClubOf(row.Spid));
     }
 
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, Task<Image?>> _imageCache = new();
@@ -238,9 +249,11 @@ public sealed class PlayerSearch : IDisposable
 
     public async Task<PlayerDetail?> GetDetailAsync(long spid, CancellationToken ct = default)
     {
+        var local = await LocalDetailAsync(spid, ct);   // the game's own data first
+        if (local != null) return local;
         var d = await FetchSiteAsync(spid, ct);
-        if (d != null) { await LearnAsync(d); return d; }
-        return await LocalDetailAsync(spid, ct);
+        if (d != null) await LearnAsync(d);
+        return d;
     }
 
     private readonly System.Collections.Concurrent.ConcurrentDictionary<long, Task<PlayerDetail?>> _siteCache = new();

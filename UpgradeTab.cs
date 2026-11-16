@@ -412,7 +412,7 @@ public sealed class UpgradeTab : UserControl
 
     private sealed record Item(PlayerInfo P)
     {
-        public override string ToString() => $"{P.Name}  ·  Mùa {P.Season}  ·  {P.Position} {P.Overall}";
+        public override string ToString() => $"{P.Name}  ·  Mùa {P.Season}{(P.Team.Length > 0 ? "  ·  " + P.Team : "")}  ·  {P.Position} {P.Overall}";
     }
 
     public async Task SearchAsync(string name)
@@ -459,7 +459,7 @@ public sealed class UpgradeTab : UserControl
             TextRenderer.DrawText(g, season, _results.Font, new Point(x, e.Bounds.Y + 2), Theme.Dim, TextFormatFlags.NoPadding);
             x += TextRenderer.MeasureText(g, season, _results.Font, new Size(int.MaxValue, 0), TextFormatFlags.NoPadding).Width + 8;
         }
-        var text = $"{p.Name}  ·  {p.Position} {p.Overall}{(p.Limited ? "  ·  Limited" : "")}";
+        var text = $"{p.Name}  ·  {(p.Team.Length > 0 ? p.Team + "  ·  " : "")}{p.Position} {p.Overall}{(p.Limited ? "  ·  Limited" : "")}";
         TextRenderer.DrawText(g, text, _results.Font, new Point(x, e.Bounds.Y + 2), Theme.Text, TextFormatFlags.NoPadding);
     }
 
