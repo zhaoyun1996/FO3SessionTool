@@ -205,14 +205,14 @@ public sealed class RankedAutoRunner
 
                     case GameScreenState.Intro:
                         StateChanged?.Invoke("Bỏ qua cảnh giới thiệu...");
-                        if (menuStep == 0 || step.Elapsed.TotalSeconds >= 1.5)
+                        if (menuStep == 0 || step.Elapsed.TotalSeconds >= 0.8)
                         {
                             menuStep++;
                             step.Restart();
-                            Log($"[Bỏ qua] Gửi phím Space (lần {menuStep}).");
+                            if (menuStep == 1 || menuStep % 10 == 0) Log($"[Bỏ qua] Gửi phím Space liên tục (lần {menuStep}).");
                             WinApi.SendKeyPress(hWnd, WinApi.VK_SPACE, 90);
                         }
-                        await Task.Delay(500, ct);
+                        await Task.Delay(300, ct);
                         break;
 
                     case GameScreenState.ModeRank:
@@ -238,6 +238,20 @@ public sealed class RankedAutoRunner
                         break;
 
                     default:
+                        if (inMatch)
+                        {
+                            // mid-match but neither the pitch view with the tactics panel nor a menu: replay, close-up, goal cutscene, etc. -> keep pressing Space to skip
+                            StateChanged?.Invoke("Trong trận, chưa thấy thanh chiến thuật: nhấn Space bỏ qua...");
+                            if (menuStep == 0 || step.Elapsed.TotalSeconds >= 0.8)
+                            {
+                                menuStep++;
+                                step.Restart();
+                                if (menuStep == 1 || menuStep % 10 == 0) Log($"[Bỏ qua] Trong trận chưa có thanh chiến thuật, gửi Space (lần {menuStep}).");
+                                WinApi.SendKeyPress(hWnd, WinApi.VK_SPACE, 90);
+                            }
+                            await Task.Delay(300, ct);
+                            break;
+                        }
                         // loading and the points screen: the game moves on by itself, so only wait (no blind clicks or keys)
                         StateChanged?.Invoke("Đang tải / chờ màn hình tiếp theo...");
                         await Task.Delay(1000, ct);
@@ -629,7 +643,7 @@ public static class WinApi
         uint lParam = 1u | (scan << 16);
         if (IsExtendedKey(vk)) lParam |= 1u << 24;
         PostMessage(hWnd, WM_KEYDOWN, (IntPtr)vk, (IntPtr)lParam);
-        if (vk is VK_SPACE or VK_RETURN) PostMessage(hWnd, WM_CHAR, (IntPtr)vk, (IntPtr)lParam);   // some UIs read the character message
+        // no WM_CHAR: the game builds the character from WM_KEYDOWN itself (a test in the chat box showed every character twice when both were sent)
     }
 
     public static void SendKeyUp(IntPtr hWnd, ushort vk)
