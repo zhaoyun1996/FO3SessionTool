@@ -357,6 +357,7 @@ public sealed class MainForm : Form
 
     private void ApplyLogin(GameApi api, string user, string token)
     {
+        _ = LoadRosterAsync(api);
         _api = api;
         api.WalletChanged += OnWallet;
         _pingTimer.Start();
@@ -371,6 +372,17 @@ public sealed class MainForm : Form
     }
 
     /// <summary>On startup: reuse the saved session if the server still accepts it, else fall back to the login popup.</summary>
+    /// <summary>The seasons the server has in the game, so the card search lists only cards that exist in game.</summary>
+    private async Task LoadRosterAsync(GameApi api)
+    {
+        try
+        {
+            var seasons = await api.GetRosterSeasonsAsync();
+            if (seasons != null) { _players.AllowedSeasons = seasons; Log($"[Game] Server có {seasons.Count} mùa thẻ trong game; tìm cầu thủ chỉ hiện các mùa này."); }
+        }
+        catch { }
+    }
+
     private async Task TryRestoreAsync()
     {
         var saved = SessionStore.Load();

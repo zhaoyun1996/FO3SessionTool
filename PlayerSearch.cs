@@ -41,6 +41,10 @@ public sealed class PlayerSearch : IDisposable
 
     private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(20) };
 
+    /// <summary>Seasons the server has in the game (from /static/roster, set after login). null = unknown, nothing is filtered by season.</summary>
+    public HashSet<int>? AllowedSeasons { get; set; }
+    private bool InGame(int season) => AllowedSeasons == null || AllowedSeasons.Contains(season);
+
     public PlayerSearch()
     {
         _http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
@@ -64,13 +68,13 @@ public sealed class PlayerSearch : IDisposable
         try
         {
             var db = await LocalPlayerDb.GetAsync();
-            if (db == null || found.Count == 0) return found;
+            if (db == null || found.Count == 0) return found.Where(f => InGame(f.Season)).ToList();
             var result = new List<PlayerInfo>();
             var have = new HashSet<long>();
             foreach (var p in found)
             {
                 var row = db.Find(p.Spid);
-                if (row == null || row.Overall <= 1) continue;
+                if (row == null || row.Overall <= 1 || !InGame(p.Season)) continue;
                 if (have.Add(p.Spid)) result.Add(FromGame(db, row, p.Name, p.Limited, p.PriceKr, p.PriceVn));
             }
             foreach (var p in found)
@@ -79,7 +83,7 @@ public sealed class PlayerSearch : IDisposable
                 if (row == null) continue;
                 foreach (var sib in db.Siblings(row))
                 {
-                    if (sib.Spid / 1_000_000 == 0 || sib.Overall <= 1 || !have.Add(sib.Spid)) continue;
+                    if (sib.Spid / 1_000_000 == 0 || sib.Overall <= 1 || !InGame((int)(sib.Spid / 1_000_000)) || !have.Add(sib.Spid)) continue;
                     result.Add(FromGame(db, sib, p.Name, false, 0, 0));
                 }
             }

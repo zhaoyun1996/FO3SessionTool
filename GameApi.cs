@@ -499,6 +499,22 @@ public sealed class GameApi
         return new UseResult(ok && resp.IsSuccessStatusCode, spid, grade, ep, resp.IsSuccessStatusCode ? text : $"HTTP {(int)resp.StatusCode}: {text}");
     }
 
+    /// <summary>GET /static/roster: the card seasons the server has in the game (seasons[].value lists the season ids). The game's own player search only shows these.</summary>
+    public async Task<HashSet<int>?> GetRosterSeasonsAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            var n = JsonNode.Parse(await GetAsync("/static/roster", ct));
+            var set = new HashSet<int>();
+            foreach (var se in n?["seasons"]?.AsArray() ?? new JsonArray())
+                foreach (var v in se?["value"]?.AsArray() ?? new JsonArray())
+                    if (v != null && int.TryParse(v.ToString(), out var id)) set.Add(id);
+            return set.Count > 0 ? set : null;
+        }
+        catch (OperationCanceledException) { throw; }
+        catch { return null; }
+    }
+
     public sealed record LeagueMe(int TeamId, int NextRound, int MaxRound, int[] Teams, long OpeningDay);
     public sealed record LeagueSim(bool Ok, int HomeGoals, int AwayGoals, string Raw);
 
