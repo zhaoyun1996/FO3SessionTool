@@ -50,7 +50,40 @@ public sealed class PlayerSearch : IDisposable
     {
         var url = "https://en.fifaaddict.com/fo3db.php?q=player&name=" + Uri.EscapeDataString(name);
         var html = await _http.GetStringAsync(url, ct);
-        return Parse(html).Where(p => p.Season != 0 && p.Spid / 1_000_000 != 0).ToList();   // season 0 (base cards) is never offered
+        var found = Parse(html).Where(p => p.Season != 0 && p.Spid / 1_000_000 != 0).ToList();   // season 0 (base cards) is never offered
+        return await AddOtherSeasonsAsync(found);
+    }
+
+    /// <summary>fifaaddict lacks some seasons (e.g. season 26). For every player found, the cards that share the last six digits of the SPID and the birth date
+    /// are read from the game's own files and added when missing, so a card the account owns is never missed because the site does not list it.</summary>
+    private async Task<List<PlayerInfo>> AddOtherSeasonsAsync(List<PlayerInfo> found)
+    {
+        try
+        {
+            var db = await LocalPlayerDb.GetAsync();
+            if (db == null || found.Count == 0) return found;
+            var have = found.Select(f => f.Spid).ToHashSet();
+            var added = new List<PlayerInfo>();
+            foreach (var p in found.ToList())
+            {
+                var row = db.Find(p.Spid);
+                if (row == null) continue;
+                foreach (var sib in db.Siblings(row))
+                {
+                    int season = (int)(sib.Spid / 1_000_000);
+                    if (season == 0 || !have.Add(sib.Spid)) continue;
+                    var d = db.ToDetail(sib);
+                    var positions = d.Positions.ToList();
+                    added.Add(new PlayerInfo(sib.Spid, p.Name, season, positions.FirstOrDefault()?.Pos ?? "", false, sib.Overall + StatBonus,
+                        new[] { sib.Finishing, sib.Sprint, sib.Strength, sib.Dribbling, sib.Stamina }.Select(v => v + StatBonus).ToArray(),
+                        0, 0, d.ImageUrl, positions, d.SkillMoves));
+                }
+            }
+            if (added.Count == 0) return found;
+            found.AddRange(added.OrderBy(a => a.Name).ThenBy(a => a.Season));
+        }
+        catch { }
+        return found;
     }
 
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, Task<Image?>> _imageCache = new();
