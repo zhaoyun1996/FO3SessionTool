@@ -104,6 +104,7 @@ public sealed class MainForm : Form
         _tabFind = new TabPage("Tìm kiếm cầu thủ") { Padding = new Padding(0, Theme.Gap, 0, 0) };
         _tabFind.Controls.Add(BuildFindTab());
 
+        PlayerNames.Init(_players);
         _upgrade = new UpgradeTab(_players, Log);
         _upgrade.InventoryProvider = () => _api == null ? Task.FromResult(new List<GameApi.OwnedCard>()) : _api.GetInventoryAsync();
         _upgrade.MarketProvider = spid => _api == null ? Task.FromResult(new List<Listing>()) : _api.SearchAsync(spid);
@@ -479,7 +480,7 @@ public sealed class MainForm : Form
                 return;
             }
             foreach (var o in prop.Options)
-                Log($"[Giao dịch] Phương án {o.Index + 1}: SPID {o.Spid} +{o.Grade} (giá {o.Price:N0}) + {o.Ep:N0} EP = {o.Value:N0}");
+                Log($"[Giao dịch] Phương án {o.Index + 1}: {await PlayerNames.DescribeAsync(o.Spid)} +{o.Grade} (giá {o.Price:N0}) + {o.Ep:N0} EP = {o.Value:N0}");
 
             var best = prop.Options.OrderByDescending(o => o.Value).First();
             GameApi.TradeOption? pick;
@@ -499,7 +500,7 @@ public sealed class MainForm : Form
             long wallet = api.LastWallet?.Ep ?? 0;
             string cap = wallet + pick.Ep > 5_000_000_000L ? "\n\nCẢNH BÁO: EP sau giao dịch vượt trần 5 tỷ của game, giao dịch có thể bị từ chối." : "";
             if (cap.Length > 0) Log("[Giao dịch] Cảnh báo: EP sau giao dịch vượt trần 5 tỷ của game, giao dịch có thể bị từ chối.");
-            Log($"[Giao dịch] Đổi {cards.Count} thẻ (giá trị {inVal:N0} EP) lấy SPID {pick.Spid} +{pick.Grade} và {pick.Ep:N0} EP.");
+            Log($"[Giao dịch] Đổi {cards.Count} thẻ (giá trị {inVal:N0} EP) lấy {await PlayerNames.DescribeAsync(pick.Spid)} +{pick.Grade} và {pick.Ep:N0} EP.");
 
             Log($"[Giao dịch] Đang chốt phương án {pick.Index + 1}...");
             var res = await api.TradeContractAsync(pick.Index);
@@ -509,7 +510,7 @@ public sealed class MainForm : Form
                 Warn("Giao dịch không thành công. Chi tiết trong nhật ký.");
                 return;
             }
-            Log($"[Giao dịch] Thành công: nhận SPID {pick.Spid} +{pick.Grade} và {pick.Ep:N0} EP.");
+            Log($"[Giao dịch] Thành công: nhận {await PlayerNames.DescribeAsync(pick.Spid)} +{pick.Grade} và {pick.Ep:N0} EP.");
             await _kho.ReloadAsync();
         }
         catch (Exception ex) { Log("[Giao dịch] LỖI: " + ex.Message); }
@@ -635,7 +636,7 @@ public sealed class MainForm : Form
         if (_gridFind.CurrentRow?.Tag is not PlayerInfo p) return;
         _tabs.SelectedTab = _tabUpgrade;
         _upgrade.PickPlayer(p);
-        Log($"Đã chọn {p.Name} (SPID {p.Spid}) cho tab Ép thẻ.");
+        Log($"Đã chọn {PlayerNames.Format(p.Name, p.Season)} cho tab Ép thẻ.");
     }
 
     // ---- tab "Ép thẻ tự động" -------------------------------------------
@@ -660,6 +661,7 @@ public sealed class MainForm : Form
         if (_upCts != null) return;
         if (_buy.Running || _league.Running || _items.Running) { Warn("Đang mua tự động hoặc giả lập mùa giải, hãy dừng trước."); return; }
         plan = await WithCeilingAsync(plan);
+        var pname = await PlayerNames.DescribeAsync(plan.Spid, plan.Name.StartsWith("SPID ") ? null : plan.Name);
 
         string sellNote = "";
         if (plan.SellAfter)
@@ -677,8 +679,8 @@ public sealed class MainForm : Form
         var rules = string.Join("\n", Enumerable.Range(2, plan.Target - 1).Select(l => $"   +{l} = +{plan.Rules[l].A} và +{plan.Rules[l].B}"));
         var ask = MessageBox.Show(
             (plan.UseInventory
-                ? $"Ép thẻ có sẵn trong kho của {plan.Name} (SPID {plan.Spid}) đến +{plan.Target}, không mua thêm." + "\n"
-                : $"Mua {plan.Quantity} thẻ +1 của {plan.Name} (SPID {plan.Spid}), rồi gom mọi thẻ hợp lệ của cầu thủ này trong kho (ngoài đội hình) và ép đến +{plan.Target}." + "\n") +
+                ? $"Ép thẻ có sẵn trong kho của {pname} đến +{plan.Target}, không mua thêm." + "\n"
+                : $"Mua {plan.Quantity} thẻ +1 của {pname}, rồi gom mọi thẻ hợp lệ của cầu thủ này trong kho (ngoài đội hình) và ép đến +{plan.Target}." + "\n") +
             (plan.UseInventory ? "Không mua thẻ mới." : $"Tiền mua: {cost}.") + $" Cộng thêm phí ép theo server.\n\nRule:\n{rules}{sellNote}\n\nTiếp tục? Thao tác này tiêu tốn EP thật.",
             "Xác nhận chạy quy trình", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
         if (ask != DialogResult.Yes) return;
@@ -686,7 +688,7 @@ public sealed class MainForm : Form
         _upCts = new CancellationTokenSource();
         _upgrade.ResetSteps();
         _upgrade.SetRunning(true);
-        Log($"[Ép thẻ] Bắt đầu: {plan.Name} (SPID {plan.Spid}){(plan.UseInventory ? "" : $" ×{plan.Quantity}")}, ép đến +{plan.Target}" + (plan.UseInventory ? " (thẻ trong kho)." : "."));
+        Log($"[Ép thẻ] Bắt đầu: {pname}{(plan.UseInventory ? "" : $" ×{plan.Quantity}")}, ép đến +{plan.Target}" + (plan.UseInventory ? " (thẻ trong kho)." : "."));
         try
         {
             var runner = new UpgradeRunner(_api, Log, _upgrade.SetStepState, _upgrade.SetProgress);
@@ -717,11 +719,12 @@ public sealed class MainForm : Form
         if (_upCts != null) return;
         if (_buy.Running || _league.Running || _items.Running) { Warn("Đang mua tự động hoặc giả lập mùa giải, hãy dừng trước."); return; }
         plan = await WithCeilingAsync(plan);
+        var pname = await PlayerNames.DescribeAsync(plan.Spid, plan.Name.StartsWith("SPID ") ? null : plan.Name);
 
         var nl = Environment.NewLine;
         var rules = string.Join(nl, Enumerable.Range(2, plan.Target - 1).Select(l => $"   +{l} = +{plan.Rules[l].A} và +{plan.Rules[l].B}"));
         var ask = MessageBox.Show(
-            $"XOAY VÒNG TỰ ĐỘNG cho {plan.Name} (SPID {plan.Spid}), ba việc chạy SONG SONG:" + nl + nl +
+            $"XOAY VÒNG TỰ ĐỘNG cho {pname}, ba việc chạy SONG SONG:" + nl + nl +
             $"• MUA thẻ +1 liên tục, từng thẻ một (giá trần: {(plan.MaxPrice > 0 ? plan.MaxPrice.ToString("N0") + " EP/thẻ" : "không giới hạn")}), chỉ mua khi dây chuyền còn chỗ." + nl +
             $"• ÉP ngay khi có đủ cặp thẻ theo rule, đến +{plan.Target}." + nl +
             (opt.KeepMode
@@ -741,10 +744,10 @@ public sealed class MainForm : Form
         _upgrade.ResetSteps();
         _upgrade.SetRunning(true);
         Log(opt.KeepMode
-            ? $"[Xoay vòng] Bắt đầu: {plan.Name} (SPID {plan.Spid}), mua và ép đến +{plan.Target}, giữ thẻ (không giao dịch, không bán)."
+            ? $"[Xoay vòng] Bắt đầu: {pname}, mua và ép đến +{plan.Target}, giữ thẻ (không giao dịch, không bán)."
             : opt.SellMode
-            ? $"[Xoay vòng] Bắt đầu song song: {plan.Name} (SPID {plan.Spid}), ép đến +{plan.Target}, bán thị trường giá cao nhất, nhận tiền {(opt.AutoCollect ? "tự động" : "thủ công")}."
-            : $"[Xoay vòng] Bắt đầu song song: {plan.Name} (SPID {plan.Spid}), ép đến +{plan.Target}, đổi khi đạt {opt.TradeMin:N0}-{opt.TradeMax:N0} EP.");
+            ? $"[Xoay vòng] Bắt đầu song song: {pname}, ép đến +{plan.Target}, bán thị trường giá cao nhất, nhận tiền {(opt.AutoCollect ? "tự động" : "thủ công")}."
+            : $"[Xoay vòng] Bắt đầu song song: {pname}, ép đến +{plan.Target}, đổi khi đạt {opt.TradeMin:N0}-{opt.TradeMax:N0} EP.");
         try
         {
             var runner = new CycleRunner(_api, Log, _upgrade.SetStepState, _upgrade.SetProgress, _upgrade.ResetSteps);

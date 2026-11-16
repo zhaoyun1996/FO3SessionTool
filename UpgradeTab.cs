@@ -471,7 +471,7 @@ public sealed class UpgradeTab : UserControl
         int ver = ++_detailVer;
         _card.Sprite = _sprite;
         _card.Clear("Đang tải thông tin cầu thủ...");
-        _log($"[Ép thẻ] Đang tải thông tin {p.Name} (SPID {p.Spid}) từ fifaaddict...");
+        _log($"[Ép thẻ] Đang tải thông tin {PlayerNames.Format(p.Name, p.Season)} từ fifaaddict...");
         try
         {
             var detailTask = _players.GetDetailAsync(p.Spid);
@@ -510,7 +510,7 @@ public sealed class UpgradeTab : UserControl
     private async Task<(string Price, string Note)> LoadPriceAsync(long spid)
     {
         if (MarketProvider == null || !_loggedIn) return ("", "");
-        _log($"[Ép thẻ] Đang xem giá thẻ +1 của SPID {spid} trên chợ chuyển nhượng...");
+        _log($"[Ép thẻ] Đang xem giá thẻ +1 của {await PlayerNames.DescribeAsync(spid)} trên chợ chuyển nhượng...");
         try
         {
             var cheap = (await MarketProvider(spid)).Where(l => l.Grade == 1).OrderBy(l => l.Price).FirstOrDefault();
@@ -523,7 +523,7 @@ public sealed class UpgradeTab : UserControl
 
     private async Task<Image?> LoadPortraitAsync(PlayerInfo p)
     {
-        _log($"[Ép thẻ] Đang tải ảnh cầu thủ từ CDN của game (SPID {p.Spid})...");
+        _log($"[Ép thẻ] Đang tải ảnh cầu thủ từ CDN của game cho {PlayerNames.Format(p.Name, p.Season)}...");
         var img = await _players.LoadImageAsync($"http://cdn.3sea.online/cdn/externalAssets/players/p{p.Spid}.png");
         if (img != null) { _log($"[Ép thẻ] Đã tải ảnh từ CDN game ({img.Width}x{img.Height})."); return img; }
         _log("[Ép thẻ] CDN game không có ảnh này, dùng ảnh từ fifaaddict.");

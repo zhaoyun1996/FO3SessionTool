@@ -143,7 +143,7 @@ public sealed class UpgradeRunner
                 while (bought < plan.Quantity)
                 {
                     lct.ThrowIfCancellationRequested();
-                    _log($"[Ép thẻ] Đang tìm giá thấp nhất thẻ +1 của SPID {plan.Spid}...");
+                    _log($"[Ép thẻ] Đang tìm giá thấp nhất thẻ +1 của {await PlayerNames.DescribeAsync(plan.Spid, plan.Name)}...");
                     var cheapest = (await _api.SearchAsync(plan.Spid, lct)).Where(l => l.Grade == 1).OrderBy(l => l.Price).FirstOrDefault();
 
                     if (cheapest == null || (plan.MaxPrice > 0 && cheapest.Price > plan.MaxPrice))
