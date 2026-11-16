@@ -31,10 +31,11 @@ public static class PlayerNames
                     if (name.Length == 0) name = d.Name;
                     label = d.SeasonLabel;
                     season = d.Season;
-                    club = d.Club;
+
                 }
             }
             catch { }
+            try { club = (await LocalPlayerDb.GetAsync())?.ClubOf(spid) ?? ""; } catch { }   // the game files' team name
             if (label.Length == 0) label = _search.SeasonLabelOf(season);
         }
         if (label.Length == 0) label = $"Mùa {season}";

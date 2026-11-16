@@ -486,7 +486,7 @@ public sealed class UpgradeTab : UserControl
             TextRenderer.DrawText(g, season, _results.Font, new Point(x, e.Bounds.Y + 2), Theme.Dim, TextFormatFlags.NoPadding);
             x += TextRenderer.MeasureText(g, season, _results.Font, new Size(int.MaxValue, 0), TextFormatFlags.NoPadding).Width + 8;
         }
-        var text = $"{p.Name}  ·  {(p.Team.Length > 0 ? p.Team + "  ·  " : "")}{p.Position} {p.Overall}{(p.Limited ? "  ·  Limited" : "")}";
+        var text = $"{p.Name}  ·  {(p.Team.Length > 0 ? p.Team + "  ·  " : "")}{p.Position} {(p.Approx ? "~" : "")}{p.Overall}{(p.Limited ? "  ·  Limited" : "")}";
         TextRenderer.DrawText(g, text, _results.Font, new Point(x, e.Bounds.Y + 2), Theme.Text, TextFormatFlags.NoPadding);
     }
 

@@ -10,7 +10,7 @@ public sealed record PosRating(string Pos, string Group, int Rating, bool Active
 public sealed record PlayerInfo(
     long Spid, string Name, int Season, string Position, bool Limited,
     int Overall, int[] Stats, long PriceKr, long PriceVn, string ImageUrl,
-    IReadOnlyList<PosRating> Positions, int SkillMoves, string Team = "");
+    IReadOnlyList<PosRating> Positions, int SkillMoves, string Team = "", bool Approx = false);
 
 /// <summary>The minimum profile shown on the upgrade tab (from fo3player.php?id=SPID).</summary>
 public sealed record PlayerDetail(
@@ -75,7 +75,7 @@ public sealed class PlayerSearch : IDisposable
             {
                 var row = db.Find(p.Spid);
                 if (row == null || row.Overall <= 1 || !InGame(p.Season)) continue;
-                if (have.Add(p.Spid)) result.Add(FromGame(db, row, p.Name, p.Limited, p.PriceKr, p.PriceVn));
+                if (have.Add(p.Spid)) result.Add(p with { Team = db.ClubOf(p.Spid) });   // the site's overall/stats match the game screen; the game files give the team
             }
             foreach (var p in found)
             {
@@ -98,7 +98,7 @@ public sealed class PlayerSearch : IDisposable
         var positions = d.Positions.ToList();
         return new PlayerInfo(row.Spid, name, (int)(row.Spid / 1_000_000), positions.FirstOrDefault()?.Pos ?? "", limited, row.Overall + StatBonus,
             new[] { row.Finishing, row.Sprint, row.Strength, row.Dribbling, row.Stamina }.Select(v => v + StatBonus).ToArray(),
-            priceKr, priceVn, d.ImageUrl, positions, d.SkillMoves, db.ClubOf(row.Spid));
+            priceKr, priceVn, d.ImageUrl, positions, d.SkillMoves, db.ClubOf(row.Spid), Approx: true);   // overall estimated from the game files (can be several points off)
     }
 
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, Task<Image?>> _imageCache = new();
@@ -253,11 +253,15 @@ public sealed class PlayerSearch : IDisposable
 
     public async Task<PlayerDetail?> GetDetailAsync(long spid, CancellationToken ct = default)
     {
-        var local = await LocalDetailAsync(spid, ct);   // the game's own data first
-        if (local != null) return local;
+        // the site's numbers are the ones the game screen shows (the game files' overall column is not); the files are the fallback for cards the site lacks
         var d = await FetchSiteAsync(spid, ct);
-        if (d != null) await LearnAsync(d);
-        return d;
+        if (d != null)
+        {
+            await LearnAsync(d);
+            var gl = SeasonLabelOf(d.Season);   // season name as the game words it
+            return gl.Length > 0 ? d with { SeasonLabel = gl } : d;
+        }
+        return await LocalDetailAsync(spid, ct);
     }
 
     private readonly System.Collections.Concurrent.ConcurrentDictionary<long, Task<PlayerDetail?>> _siteCache = new();
