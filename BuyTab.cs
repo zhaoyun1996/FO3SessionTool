@@ -464,12 +464,6 @@ public sealed class BuyTab : UserControl
         var sel = Selected();
         if (sel.Count == 0) return;
         var opt = Options();
-        var ask = MessageBox.Show(
-            $"MUA TỰ ĐỘNG {sel.Count} cầu thủ = {sel.Count} luồng chạy song song." + Environment.NewLine +
-            $"Dừng khi EP xuống dưới {opt.StopBelowEp:N0}" + (opt.MaxCards > 0 ? $" hoặc sau {opt.MaxCards} thẻ" : "") + "." + Environment.NewLine +
-            (opt.MaxPrice > 0 ? $"Giá tối đa: {opt.MaxPrice:N0} EP/thẻ." : "Không giới hạn giá mỗi thẻ.") + Environment.NewLine +
-            "Thao tác này tiêu EP thật. Tiếp tục?", "Mua tự động", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
-        if (ask != DialogResult.Yes) return;
 
         _cts = new CancellationTokenSource();
         UpdateUi();

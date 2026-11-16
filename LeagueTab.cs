@@ -76,9 +76,6 @@ public sealed class LeagueTab : UserControl
         if (api == null) { MessageBox.Show("Hãy đăng nhập trước.", "Mùa giải", MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
         if (_otherBusy()) { MessageBox.Show("Đang chạy một việc khác (ép thẻ, mua, giao dịch), hãy dừng trước.", "Mùa giải", MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
         int n = (int)_rounds.Value;
-        var ask = MessageBox.Show($"Giả lập {(n > 0 ? n + " vòng" : "đến hết mùa")} của chế độ Mùa giải (server tự tính tỉ số, kết quả và phần thưởng tính vào tài khoản). Tiếp tục?",
-            "Mùa giải", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
-        if (ask != DialogResult.Yes) return;
 
         _cts = new CancellationTokenSource(); _btnRun.Text = "Dừng";
         var runner = new LeagueRunner(api, _log, s => BeginInvoke(() => _status.Text = s));

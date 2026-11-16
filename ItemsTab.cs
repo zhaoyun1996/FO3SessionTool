@@ -136,8 +136,6 @@ public sealed class ItemsTab : UserControl
         int want = (int)(isPack ? _packQty.Value : _epQty.Value);
         int total = want <= 0 ? have : Math.Min(want, have);
         string what = isPack ? "thẻ" : "Thẻ EP may mắn";
-        var ask = MessageBox.Show($"Mở {total} {what}? Mỗi lần mở dùng hết 1 vật phẩm, không hoàn lại.", "Mở vật phẩm", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
-        if (ask != DialogResult.Yes) return;
 
         _cts = new CancellationTokenSource();
         (isPack ? _btnPack : _btnEp).Text = "Dừng";

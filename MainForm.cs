@@ -675,27 +675,6 @@ public sealed class MainForm : Form
         plan = await WithCeilingAsync(plan);
         var pname = await PlayerNames.DescribeAsync(plan.Spid, plan.Name.StartsWith("SPID ") ? null : plan.Name);
 
-        string sellNote = "";
-        if (plan.SellAfter)
-        {
-            try
-            {
-                var sp = await _api.GetSellPriceAsync(plan.Spid, plan.Target);
-                sellNote = sp != null
-                    ? $"\n\nSAU KHI ÉP XONG: các thẻ +{plan.Target} vừa ép ra được đăng bán NGAY lên thị trường chuyển nhượng ở giá cao nhất game cho phép ({sp.Upper:N0} EP/thẻ), phí đăng {sp.Fee:N0}/thẻ, game giữ 20% khi bán xong. " + (plan.CollectAfter ? "Tool sẽ chờ tối đa 3 phút và tự nhận tiền." : "Tiền bán được bạn tự nhận trong game.")
-                    : "\n\nSAU KHI ÉP XONG: sẽ đăng bán các thẻ vừa ép ra ở giá cao nhất (chưa đọc được khung giá).";
-            }
-            catch (Exception ex) { sellNote = "\n\nSAU KHI ÉP XONG: sẽ đăng bán (không đọc được khung giá: " + ex.Message + ")."; }
-        }
-        var cost = plan.MaxPrice > 0 ? $"tối đa {plan.Quantity * plan.MaxPrice:N0} EP (giá trần {plan.MaxPrice:N0}/thẻ)" : "không giới hạn giá";
-        var rules = string.Join("\n", Enumerable.Range(2, plan.Target - 1).Select(l => $"   +{l} = +{plan.Rules[l].A} và +{plan.Rules[l].B}"));
-        var ask = MessageBox.Show(
-            (plan.UseInventory
-                ? $"Ép thẻ có sẵn trong kho của {pname} đến +{plan.Target}, không mua thêm." + "\n"
-                : $"Mua {plan.Quantity} thẻ +1 của {pname}, rồi gom mọi thẻ hợp lệ của cầu thủ này trong kho (ngoài đội hình) và ép đến +{plan.Target}." + "\n") +
-            (plan.UseInventory ? "Không mua thẻ mới." : $"Tiền mua: {cost}.") + $" Cộng thêm phí ép theo server.\n\nRule:\n{rules}{sellNote}\n\nTiếp tục? Thao tác này tiêu tốn EP thật.",
-            "Xác nhận chạy quy trình", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
-        if (ask != DialogResult.Yes) return;
 
         _upCts = new CancellationTokenSource();
         _upgrade.ResetSteps();
@@ -733,24 +712,6 @@ public sealed class MainForm : Form
         plan = await WithCeilingAsync(plan);
         var pname = await PlayerNames.DescribeAsync(plan.Spid, plan.Name.StartsWith("SPID ") ? null : plan.Name);
 
-        var nl = Environment.NewLine;
-        var rules = string.Join(nl, Enumerable.Range(2, plan.Target - 1).Select(l => $"   +{l} = +{plan.Rules[l].A} và +{plan.Rules[l].B}"));
-        var ask = MessageBox.Show(
-            $"XOAY VÒNG TỰ ĐỘNG cho {pname}, ba việc chạy SONG SONG:" + nl + nl +
-            $"• MUA thẻ +1 liên tục, từng thẻ một (giá trần: {(plan.MaxPrice > 0 ? plan.MaxPrice.ToString("N0") + " EP/thẻ" : "không giới hạn")}), chỉ mua khi dây chuyền còn chỗ." + nl +
-            $"• ÉP ngay khi có đủ cặp thẻ theo rule, đến +{plan.Target}." + nl +
-            (opt.KeepMode
-                ? $"• KHÔNG LÀM GÌ thêm: thẻ +{plan.Target} ép xong được giữ lại trong kho (không giao dịch, không bán). Chạy đến khi hết EP, kho đầy hoặc bạn bấm Dừng." + nl
-                : opt.SellMode
-                ? $"• BÁN: mỗi thẻ +{plan.Target} ép xong được đăng bán NGAY lên thị trường chuyển nhượng ở giá CAO NHẤT game cho phép. Phí đăng 1% khi đăng, game giữ 20% khi bán xong." + nl +
-                  (opt.AutoCollect ? "• NHẬN TIỀN tự động khi thẻ bán xong (thẻ chưa có người mua thì tool chờ, không dừng dù EP đã hết)." : "• Tiền bán KHÔNG được nhận tự động: bạn tự nhận trong game.") + nl
-                : $"• GIAO DỊCH khi tổng giá trị thẻ +{plan.Target} đạt {opt.TradeMin:N0} - {opt.TradeMax:N0} EP: đổi hết (chọn phương án lớn nhất), không giữ lại thẻ nào." + nl) +
-            "   Gồm cả thẻ +" + plan.Target + " của cầu thủ này đang có sẵn trong kho (ngoài đội hình); các thẻ thấp hơn có sẵn cũng được dùng để ép." + nl + nl +
-            $"Rule:{nl}{rules}{nl}{nl}" +
-            $"Dừng khi: hết EP{(opt.StopBelowEp > 0 ? $" (không mua nếu EP còn lại sau khi mua dưới {opt.StopBelowEp:N0})" : "")}{(opt.KeepMode ? "" : $", lỗ {opt.MaxLossRounds} lần {(opt.SellMode ? "bán" : "giao dịch")} liên tiếp")}, phiên hết hạn, có lỗi, hoặc bạn bấm Dừng." + nl +
-            (opt.KeepMode ? "Thao tác này tiêu tốn EP thật (mua và ép)." : opt.SellMode ? "Lãi/lỗ mỗi lần bán là ước tính (giá bán trừ 20% và phí đăng, trừ chi phí mua+ép). Mỗi lệnh đăng bán sẽ không hỏi lại. Thao tác này tiêu tốn EP thật." : "Mỗi giao dịch KHÔNG hoàn tác và sẽ không hỏi lại. Thao tác này tiêu tốn EP thật.") + nl + nl + "Bắt đầu?",
-            "Xác nhận xoay vòng tự động", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
-        if (ask != DialogResult.Yes) return;
 
         _upCts = new CancellationTokenSource();
         _upgrade.ResetSteps();
