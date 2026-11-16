@@ -91,6 +91,7 @@ public sealed class UpgradeRunner
         _step(0, StepState.Running);
 
         // ---- the storage: every usable card of this player, not only the ones just bought ----
+        List<GameApi.OwnedCard>? lastInv = null;
         async Task<bool> ReadStorageAsync(bool required)
         {
             _log("[Ép thẻ] Đang đọc kho thẻ (/coach/me) để gom toàn bộ thẻ hợp lệ của cầu thủ...");
@@ -111,6 +112,7 @@ public sealed class UpgradeRunner
                 foreach (var l in pool.Values) l.Clear();
                 foreach (var c in inv.Where(c => c.Spid == plan.Spid && !c.InSquad && c.Grade >= 1 && c.Grade <= plan.Target)) pool[c.Grade].Add(c.Id);
             }
+            lastInv = inv;
             int inLineup = inv.Count(c => c.Spid == plan.Spid && c.InSquad);
             if (inLineup > 0) _log($"[Ép thẻ] {inLineup} thẻ của cầu thủ này đang trong đội hình, không được dùng.");
             return true;
@@ -119,7 +121,22 @@ public sealed class UpgradeRunner
         if (plan.UseInventory)
         {
             if (!await ReadStorageAsync(true)) return Fail(0, "Không đọc được kho thẻ. Dừng.");
-            if (pool.Values.All(l => l.Count == 0)) return Fail(0, "Không có thẻ nào của cầu thủ này (ngoài đội hình) để ép.");
+            if (pool.Values.All(l => l.Count == 0))
+            {
+                // say what the storage does hold, so a wrong pick (another season of the same player) is obvious
+                var mine = lastInv?.Where(c => c.Spid == plan.Spid).ToList() ?? new();
+                if (mine.Count > 0)
+                    _log($"[Ép thẻ] Kho có {mine.Count} thẻ của đúng cầu thủ này nhưng không dùng được: " + string.Join(", ", mine.GroupBy(c => (c.Grade, c.InSquad)).OrderBy(g => g.Key.Grade).Select(g => $"{g.Count()}×+{g.Key.Grade}{(g.Key.InSquad ? " (đội hình)" : "")}")) + $" (cần từ +1 đến +{plan.Target}, ngoài đội hình).");
+                var other = lastInv?.Where(c => c.Spid != plan.Spid && c.Spid % 1_000_000 == plan.Spid % 1_000_000).ToList() ?? new();
+                if (other.Count > 0)
+                {
+                    var parts = new List<string>();
+                    foreach (var g in other.GroupBy(c => c.Spid))
+                        parts.Add($"{await PlayerNames.DescribeAsync(g.Key)}: " + string.Join(", ", g.GroupBy(c => c.Grade).OrderBy(x => x.Key).Select(x => $"{x.Count()}×+{x.Key}")));
+                    _log("[Ép thẻ] Kho không có thẻ của mùa bạn chọn, nhưng có thẻ cùng cầu thủ ở mùa khác: " + string.Join("; ", parts) + ". Hãy chọn đúng mùa thẻ ở ô tìm cầu thủ.");
+                }
+                return Fail(0, mine.Count > 0 ? "Thẻ của cầu thủ này trong kho không dùng được (đang trong đội hình hoặc sai mức +). Xem nhật ký." : other.Count > 0 ? "Kho không có thẻ của mùa bạn chọn, chỉ có mùa khác của cùng cầu thủ. Xem nhật ký." : "Kho không có thẻ nào của cầu thủ này.");
+            }
             _step(0, StepState.Done);
         }
         else await ReadStorageAsync(false);   // older cards of the player take part too
