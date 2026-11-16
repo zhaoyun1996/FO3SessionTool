@@ -59,6 +59,7 @@ public sealed class MainForm : Form
 
         BuildLayout();
         Theme.Apply(this);
+        foreach (var hidden in _tabOrder) if (!_tabs.TabPages.Contains(hidden)) Theme.Apply(hidden);   // pages hidden at start are not in the control tree yet, theme them too
         _log.BackColor = Theme.Surface2; _log.ForeColor = Theme.Text; _log.Font = Theme.Mono; _log.BorderStyle = BorderStyle.None;
 
         _btnFromGame.Click += async (_, _) => await ImportFromGameAsync();
