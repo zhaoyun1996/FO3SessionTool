@@ -17,8 +17,6 @@ public sealed class RankedTab : UserControl
     private readonly DarkNumber _numMatches = new() { Minimum = 0, Maximum = 1000, Width = 90 };
     private readonly DarkNumber _numCooldown = new() { Minimum = 0, Maximum = 120, Width = 90 };
     private readonly DarkCombo _formation = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 190 };
-    private readonly DarkCheck _realKeys = new() { Text = "Gửi Space bằng phím thật khi cần \"Bỏ qua\"", Width = 400, Height = 24 };
-    private readonly Label _lblRealKeysHelp = new() { AutoSize = true, MaximumSize = new Size(560, 0), ForeColor = Theme.Dim, Text = "Cảnh \"Bỏ qua [SPACE]\" cần phím Space. Mặc định tool gửi phím vào cửa sổ game mà không đụng bàn phím của bạn; nếu game không bỏ qua cảnh đó, hãy tick ô này: tool sẽ đưa game lên trước khoảng 1 giây, bấm Space thật rồi trả lại cửa sổ bạn đang dùng. Chuột vẫn không bị chiếm." };
     private readonly Label _lblAdmin = new() { AutoSize = true, Font = Theme.Bold };
     private readonly Label _lblAdminNote = new() { AutoSize = true, MaximumSize = new Size(760, 0), ForeColor = Theme.Dim, Text = "Tab này điều khiển cửa sổ game bằng cách gửi chuột và phím vào đó. Windows chỉ cho phép việc này khi tool có quyền ngang game: nếu game chạy quyền admin thì tool cũng phải chạy admin (chuột phải FO3SessionTool.exe > Run as administrator). Chưa đủ quyền thì các ô bên dưới bị khoá." };
     private readonly DarkCombo _size = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 190 };
@@ -120,10 +118,6 @@ public sealed class RankedTab : UserControl
         Row("Chiến thuật trong trận", _tactic);
         Row("Nghỉ giữa 2 trận (giây)", _numCooldown);
         Row("Khung hình game", SizeRow());
-        grid.Controls.Add(new Label());
-        grid.Controls.Add(_realKeys);
-        grid.Controls.Add(new Label());
-        grid.Controls.Add(_lblRealKeysHelp);
         grp.Controls.Add(grid);
         root.Controls.Add(grp, 0, 2);
 
@@ -212,7 +206,7 @@ public sealed class RankedTab : UserControl
         bool running = _runner.IsRunning;
         bool usable = _gameFound && !_blocked;
         bool on = usable && !running;
-        _numMatches.Enabled = _numCooldown.Enabled = _tactic.Enabled = _formation.Enabled = _realKeys.Enabled = on;
+        _numMatches.Enabled = _numCooldown.Enabled = _tactic.Enabled = _formation.Enabled = on;
         _size.Enabled = usable;
         _btnStart.Enabled = on;
         _btnStop.Enabled = running;
@@ -226,7 +220,7 @@ public sealed class RankedTab : UserControl
             MessageBox.Show("Chưa thấy cửa sổ game FIFA Online 3 (fifazf.exe). Hãy mở game ở chế độ cửa sổ trước.", "Giả lập xếp hạng", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
-        var settings = new RankedAutoRunner.Settings((int)_numMatches.Value, 15 * 60, 60, 30, (int)_numCooldown.Value, null, _tactic.SelectedIndex, _formation.SelectedIndex, _realKeys.Checked);
+        var settings = new RankedAutoRunner.Settings((int)_numMatches.Value, 15 * 60, 60, 30, (int)_numCooldown.Value, null, _tactic.SelectedIndex, _formation.SelectedIndex);
         _runner.Start(settings);
         RefreshEnabled();
     }

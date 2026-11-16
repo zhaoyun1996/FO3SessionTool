@@ -33,8 +33,7 @@ public sealed class RankedAutoRunner
         int CooldownSec,         // default ~8s
         Point? CustomMatchmakePos = null,
         int Tactic = 0,          // 0 = leave as is, 1..6 = tactic tab to select at the start of a match
-        int Formation = 0,       // 0 = leave as is, 1..3 = lineup A, B, C on the lineup screen
-        bool RealKeys = false    // Space for the "Bỏ qua" screens as a real key press (game brought to the front for a moment)
+        int Formation = 0        // 0 = leave as is, 1..3 = lineup A, B, C on the lineup screen
     );
 
     public event Action<string>? LogMessage;
@@ -211,8 +210,7 @@ public sealed class RankedAutoRunner
                             menuStep++;
                             step.Restart();
                             Log($"[Bỏ qua] Gửi phím Space (lần {menuStep}).");
-                            if (cfg.RealKeys) WinApi.SendRealKey(hWnd, WinApi.VK_SPACE);
-                            else WinApi.SendKeyPress(hWnd, WinApi.VK_SPACE, 90);
+                            WinApi.SendKeyPress(hWnd, WinApi.VK_SPACE, 90);
                         }
                         await Task.Delay(500, ct);
                         break;
@@ -555,9 +553,6 @@ public static class WinApi
         return thumb;
     }
 
-    [StructLayout(LayoutKind.Sequential)] private struct KI { public ushort vk; public ushort sc; public uint fl; public uint t; public UIntPtr ex; }
-    [StructLayout(LayoutKind.Explicit, Size = 32)] private struct IN { [FieldOffset(0)] public uint type; [FieldOffset(8)] public KI ki; }
-    [DllImport("user32.dll")] private static extern uint SendInput(uint n, IN[] i, int cb);
     [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags);
     [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr h, out RECT r);
 
@@ -567,22 +562,6 @@ public static class WinApi
         if (hWnd == IntPtr.Zero) return false;
         const uint WM_NULL = 0;
         return PostMessage(hWnd, WM_NULL, IntPtr.Zero, IntPtr.Zero) || Marshal.GetLastWin32Error() != 5;   // 5 = access denied (UIPI)
-    }
-
-    /// <summary>A real key press (SendInput): the game is brought to the front for a moment and the previous window is restored afterwards.</summary>
-    public static void SendRealKey(IntPtr hWnd, ushort vk)
-    {
-        var prev = GetForegroundWindow();
-        ActivateWindow(hWnd);
-        Thread.Sleep(250);
-        ushort sc = (ushort)MapVirtualKey(vk, 0);
-        var down = new IN[1]; down[0].type = 1; down[0].ki.vk = vk; down[0].ki.sc = sc;
-        var up = new IN[1]; up[0].type = 1; up[0].ki.vk = vk; up[0].ki.sc = sc; up[0].ki.fl = 2;
-        SendInput(1, down, Marshal.SizeOf<IN>());
-        Thread.Sleep(80);
-        SendInput(1, up, Marshal.SizeOf<IN>());
-        Thread.Sleep(120);
-        if (prev != IntPtr.Zero && prev != hWnd) SetForegroundWindow(prev);
     }
 
     public static void Maximize(IntPtr h) => ShowWindow(h, 3);
