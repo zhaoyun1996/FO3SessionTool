@@ -1,45 +1,39 @@
 namespace FO3SessionTool;
 
-/// <summary>Readable card names for the log: "Name (season label)" instead of a bare SPID. Needs Init with the shared PlayerSearch (cached lookups).</summary>
+/// <summary>Readable card names for the log: "Name - Mùa Europe Legend - Thẻ +5" instead of a bare SPID. Needs Init with the shared PlayerSearch (cached lookups).</summary>
 public static class PlayerNames
 {
     private static PlayerSearch? _search;
     public static void Init(PlayerSearch search) => _search = search;
 
+    /// <summary>The season as the game names it ("Europe Legend", "2009"); "26" when the game has no name for it.</summary>
     public static string SeasonText(int season)
     {
         var l = _search?.SeasonLabelOf(season) ?? "";
-        return l.Length > 0 ? l : $"Mùa {season}";
+        return l.Length > 0 ? l : season.ToString();
     }
 
-    /// <summary>When the name is already known (a search result, a plan): just add the season.</summary>
-    public static string Format(string name, int season) => $"{name} ({SeasonText(season)})";
+    private static string Join(string name, int season, int grade) =>
+        $"{name} - Mùa {SeasonText(season)}" + (grade > 0 ? $" - Thẻ +{grade}" : "");
 
-    /// <summary>"Name (season)" for a card by SPID: fifaaddict / the game's own files, cached. Falls back to the season and SPID when the name is unknown.</summary>
-    public static async Task<string> DescribeAsync(long spid, string? knownName = null)
+    /// <summary>When the name is already known (a search result, a plan): just add the season (and the card level when given).</summary>
+    public static string Format(string name, int season, int grade = 0) => Join(name, season, grade);
+
+    /// <summary>"Name - Mùa X - Thẻ +N" for a card by SPID: the name from fifaaddict / the game's own files (cached), the season name from the game.
+    /// Falls back to "cầu thủ SPID n" when the name is unknown.</summary>
+    public static async Task<string> DescribeAsync(long spid, string? knownName = null, int grade = 0)
     {
         int season = (int)(spid / 1_000_000);
-        string label = "", club = "";
         string name = knownName ?? "";
-        if (_search != null)
+        if (_search != null && name.Length == 0)
         {
             try
             {
                 var d = await _search.GetDetailCachedAsync(spid).WaitAsync(TimeSpan.FromSeconds(8));
-                if (d != null)
-                {
-                    if (name.Length == 0) name = d.Name;
-                    label = d.SeasonLabel;
-                    season = d.Season;
-
-                }
+                if (d != null) { name = d.Name; season = d.Season; }
             }
             catch { }
-            try { club = (await LocalPlayerDb.GetAsync())?.ClubOf(spid) ?? ""; } catch { }   // the game files' team name
-            if (label.Length == 0) label = _search.SeasonLabelOf(season);
         }
-        if (label.Length == 0) label = $"Mùa {season}";
-        if (club.Length > 0) label = $"Mùa {season} · {club}";   // the game's own data decides: its team name, not the website's season label
-        return name.Length > 0 ? $"{name} ({label})" : $"cầu thủ {label} (SPID {spid})";
+        return Join(name.Length > 0 ? name : $"cầu thủ SPID {spid}", season, grade);
     }
 }

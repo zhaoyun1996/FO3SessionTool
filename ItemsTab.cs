@@ -170,7 +170,7 @@ public sealed class ItemsTab : UserControl
                     {
                         failures = 0; opened++;
                         _log(r.Spid > 0
-                            ? $"[Mở vật phẩm] {st.Name}: ra thẻ {await PlayerNames.DescribeAsync(r.Spid)} +{r.Grade} ({opened}/{total})."
+                            ? $"[Mở vật phẩm] {st.Name}: ra thẻ {await PlayerNames.DescribeAsync(r.Spid, null, r.Grade)} ({opened}/{total})."
                             : $"[Mở vật phẩm] {st.Name}: {GameApi.Trim(r.Raw)} ({opened}/{total})");
                         BeginInvoke(() => _status.Text = $"Đã mở {opened}/{total}...");
                         await Pacing.Wait(0.8, 1.6, pace, ct);

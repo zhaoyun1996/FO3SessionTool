@@ -492,7 +492,7 @@ public sealed class MainForm : Form
                 return;
             }
             foreach (var o in prop.Options)
-                Log($"[Giao dịch] Phương án {o.Index + 1}: {await PlayerNames.DescribeAsync(o.Spid)} +{o.Grade} (giá {o.Price:N0}) + {o.Ep:N0} EP = {o.Value:N0}");
+                Log($"[Giao dịch] Phương án {o.Index + 1}: {await PlayerNames.DescribeAsync(o.Spid, null, o.Grade)} (giá {o.Price:N0}) + {o.Ep:N0} EP = {o.Value:N0}");
 
             var best = prop.Options.OrderByDescending(o => o.Value).First();
             GameApi.TradeOption? pick;
@@ -512,7 +512,7 @@ public sealed class MainForm : Form
             long wallet = api.LastWallet?.Ep ?? 0;
             string cap = wallet + pick.Ep > 5_000_000_000L ? "\n\nCẢNH BÁO: EP sau giao dịch vượt trần 5 tỷ của game, giao dịch có thể bị từ chối." : "";
             if (cap.Length > 0) Log("[Giao dịch] Cảnh báo: EP sau giao dịch vượt trần 5 tỷ của game, giao dịch có thể bị từ chối.");
-            Log($"[Giao dịch] Đổi {cards.Count} thẻ (giá trị {inVal:N0} EP) lấy {await PlayerNames.DescribeAsync(pick.Spid)} +{pick.Grade} và {pick.Ep:N0} EP.");
+            Log($"[Giao dịch] Đổi {cards.Count} thẻ (giá trị {inVal:N0} EP) lấy {await PlayerNames.DescribeAsync(pick.Spid, null, pick.Grade)} và {pick.Ep:N0} EP.");
 
             Log($"[Giao dịch] Đang chốt phương án {pick.Index + 1}...");
             var res = await api.TradeContractAsync(pick.Index);
@@ -522,7 +522,7 @@ public sealed class MainForm : Form
                 Warn("Giao dịch không thành công. Chi tiết trong nhật ký.");
                 return;
             }
-            Log($"[Giao dịch] Thành công: nhận {await PlayerNames.DescribeAsync(pick.Spid)} +{pick.Grade} và {pick.Ep:N0} EP.");
+            Log($"[Giao dịch] Thành công: nhận {await PlayerNames.DescribeAsync(pick.Spid, null, pick.Grade)} và {pick.Ep:N0} EP.");
             await _kho.ReloadAsync();
         }
         catch (Exception ex) { Log("[Giao dịch] LỖI: " + ex.Message); }

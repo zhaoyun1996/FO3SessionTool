@@ -492,7 +492,7 @@ public sealed class CycleRunner
             var prop = await _api.TradeProposalAsync(batch.Select(c => c.Id), tok);
             if (!prop.Ok) { RestoreBatch(batch, plan); _step(CycleRunner.TradeStep, StepState.Error); Stop("Server không đưa ra phương án giao dịch: " + GameApi.Trim(prop.Raw)); return; }
             foreach (var o in prop.Options)
-                _log($"[Xoay vòng/Giao dịch] Phương án {o.Index + 1}: {await PlayerNames.DescribeAsync(o.Spid)} +{o.Grade} (giá {o.Price:N0}) + {o.Ep:N0} EP = {o.Value:N0}");
+                _log($"[Xoay vòng/Giao dịch] Phương án {o.Index + 1}: {await PlayerNames.DescribeAsync(o.Spid, null, o.Grade)} (giá {o.Price:N0}) + {o.Ep:N0} EP = {o.Value:N0}");
             var best = prop.Options.OrderByDescending(o => o.Value).First();
             if (opt.PreferSeasons is { Count: > 0 })
             {
@@ -627,7 +627,7 @@ public sealed class CycleRunner
             if (o.Status != "sold" && o.Status != "completed")   // "sold" is what the game reports (seen on the live server, 2026-11-12)
             {
                 if (_statusSeen.Add("status:" + o.Status))
-                    _log($"[Xoay vòng/Nhận tiền] Lệnh bán {await PlayerNames.DescribeAsync(o.Spid)} +{o.Grade} có trạng thái lạ \"{o.Status}\", bỏ qua (chưa biết cách xử lý trạng thái này).");
+                    _log($"[Xoay vòng/Nhận tiền] Lệnh bán {await PlayerNames.DescribeAsync(o.Spid, null, o.Grade)} có trạng thái lạ \"{o.Status}\", bỏ qua (chưa biết cách xử lý trạng thái này).");
                 continue;
             }
             var r = await _api.CollectOfferAsync(o.OfferId, CancellationToken.None);
@@ -635,7 +635,7 @@ public sealed class CycleRunner
             {
                 Interlocked.Add(ref _collected, r.Received);
                 Activity();
-                _log($"[Xoay vòng/Nhận tiền] Đã nhận {r.Received:N0} EP (thẻ {await PlayerNames.DescribeAsync(o.Spid)} +{o.Grade} bán {o.Price:N0}). EP hiện có {Ep():N0}. Tổng đã nhận {_collected:N0}.");
+                _log($"[Xoay vòng/Nhận tiền] Đã nhận {r.Received:N0} EP (thẻ {await PlayerNames.DescribeAsync(o.Spid, null, o.Grade)} bán {o.Price:N0}). EP hiện có {Ep():N0}. Tổng đã nhận {_collected:N0}.");
             }
             else if (_statusSeen.Add("fail:" + o.OfferId))
                 _log($"[Xoay vòng/Nhận tiền] Nhận tiền thất bại: {GameApi.Trim(r.Raw)}");
