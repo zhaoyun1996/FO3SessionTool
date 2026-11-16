@@ -19,6 +19,7 @@ public sealed class RankedTab : UserControl
     private readonly DarkCombo _formation = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 190 };
     private readonly Label _lblAdmin = new() { AutoSize = true, Font = Theme.Bold };
     private readonly Label _lblAdminNote = new() { AutoSize = true, MaximumSize = new Size(760, 0), ForeColor = Theme.Dim, Text = "Tab này điều khiển cửa sổ game bằng cách gửi chuột và phím vào đó. Windows chỉ cho phép việc này khi tool có quyền ngang game: nếu game chạy quyền admin thì tool cũng phải chạy admin (chuột phải FO3SessionTool.exe > Run as administrator). Chưa đủ quyền thì các ô bên dưới bị khoá." };
+    private readonly Label _lblSizeNote = new() { AutoSize = true, MaximumSize = new Size(560, 0), ForeColor = Theme.Dim, Text = "Game chỉ vẽ ở độ phân giải trong graphics.ini nên kéo giãn cửa sổ sẽ làm chuột thật bấm lệch. Tool sửa file này: hãy ĐÓNG game, chọn khung hình, rồi mở lại game. Ô này chỉ dùng được khi game đang đóng." };
     private readonly DarkCombo _size = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 190 };
     private readonly DarkCombo _tactic = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 190 };
 
@@ -44,7 +45,7 @@ public sealed class RankedTab : UserControl
         _formation.Items.AddRange(new object[] { "Giữ nguyên", "Đội hình A", "Đội hình B", "Đội hình C" });
         _formation.SelectedIndex = 0;
         _size.Items.AddRange(SizeNames);
-        _size.SelectedIndex = 0;
+        ShowIniSize();
 
         BuildLayout();
 
@@ -56,7 +57,7 @@ public sealed class RankedTab : UserControl
 
         _btnStart.Click += (_, _) => StartAuto();
         _btnStop.Click += (_, _) => StopAuto();
-        _size.SelectionChangeCommitted += (_, _) => ResizeGame();   // the list of the game's own resolution menu; applied as soon as one is picked
+        _size.SelectionChangeCommitted += (_, _) => SaveSize();   // written as soon as one is picked
         _timer.Tick += (_, _) => CheckGame();
         _timer.Start();
         CheckGame();
@@ -118,6 +119,8 @@ public sealed class RankedTab : UserControl
         Row("Chiến thuật trong trận", _tactic);
         Row("Nghỉ giữa 2 trận (giây)", _numCooldown);
         Row("Khung hình game", SizeRow());
+        grid.Controls.Add(new Label());
+        grid.Controls.Add(_lblSizeNote);
         grp.Controls.Add(grid);
         root.Controls.Add(grp, 0, 2);
 
@@ -138,27 +141,71 @@ public sealed class RankedTab : UserControl
         return _size;
     }
 
-    // Same entries as the game's own resolution menu. Index 0 = the size the window had when the tool first saw it.
-    private static readonly object[] SizeNames = { "Cửa sổ mặc định", "Full Screen (16:9)", "640 x 480 (4:3)", "800 x 600 (4:3)", "1024 x 768 (4:3)", "1280 x 720 (16:9)", "1280 x 960 (4:3)", "1600 x 900 (16:9)" };
-    private static readonly (int W, int H)[] Sizes = { (0, 0), (-1, -1), (640, 480), (800, 600), (1024, 768), (1280, 720), (1280, 960), (1600, 900) };
-    private (int W, int H)? _origSize;
+    // The game renders at the resolution set in its own graphics.ini / settings menu: stretching its window does not change that (the picture
+    // is only scaled and the real mouse no longer lands where it points). So the tool edits graphics.ini, which the game reads when it starts.
+    private static readonly object[] SizeNames = { "Full Screen", "640 x 480 (4:3)", "800 x 600 (4:3)", "1024 x 768 (4:3)", "1280 x 720 (16:9)", "1280 x 960 (4:3)", "1600 x 900 (16:9)" };
+    private static readonly (int W, int H)[] Sizes = { (0, 0), (640, 480), (800, 600), (1024, 768), (1280, 720), (1280, 960), (1600, 900) };
+    private string? _iniPath;
 
-    private void ResizeGame()
+    private static string? FindGraphicsIni()
     {
-        var h = WinApi.FindGameWindow();
-        if (h == IntPtr.Zero) return;
-        int i = _size.SelectedIndex;
-        bool ok;
-        string name = (string)SizeNames[i];
-        if (i == 1) { WinApi.Maximize(h); ok = true; }
-        else
+        var dirs = new List<string>();
+        try { foreach (var p in System.Diagnostics.Process.GetProcessesByName("fifazf")) { var d = Path.GetDirectoryName(p.MainModule?.FileName); if (d != null) dirs.Add(d); } } catch { }
+        var cur = new DirectoryInfo(AppContext.BaseDirectory);
+        for (int i = 0; i < 5 && cur != null; i++, cur = cur.Parent) dirs.Add(cur.FullName);
+        return dirs.Select(d => Path.Combine(d, "graphics.ini")).FirstOrDefault(File.Exists);
+    }
+
+    private static Dictionary<string, string> ReadIni(string path)
+    {
+        var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var line in File.ReadAllLines(path)) { int k = line.IndexOf('='); if (k > 0) d[line[..k].Trim()] = line[(k + 1)..].Trim(); }
+        return d;
+    }
+
+    private void ShowIniSize()
+    {
+        _iniPath = FindGraphicsIni();
+        if (_iniPath == null) return;
+        try
         {
-            WinApi.Restore(h);
-            var (w, hh) = i == 0 ? (_origSize ?? (1600, 900)) : Sizes[i];
-            ok = WinApi.SetClientSize(h, w, hh);
+            var ini = ReadIni(_iniPath);
+            int w = int.Parse(ini.GetValueOrDefault("SCREEN_WIDTH", "0")), h = int.Parse(ini.GetValueOrDefault("SCREEN_HEIGHT", "0"));
+            bool full = ini.GetValueOrDefault("FULLSCREEN", "0") == "1";
+            int idx = full ? 0 : Array.FindIndex(Sizes, s => s.W == w && s.H == h);
+            if (idx >= 0) _size.SelectedIndex = idx; else _size.SelectedIndex = -1;
         }
-        _log(ok ? $"[Giả lập XH] Khung hình game: {name}." : $"[Giả lập XH] Game không nhận khung hình {name} (cửa sổ có thể bị khoá kích thước).");
-        CheckGame();
+        catch { }
+    }
+
+    private void SaveSize()
+    {
+        _iniPath ??= FindGraphicsIni();
+        if (_iniPath == null) { _log("[Giả lập XH] Không tìm thấy graphics.ini của game."); return; }
+        if (System.Diagnostics.Process.GetProcessesByName("fifazf").Length > 0)
+        {
+            _log("[Giả lập XH] Hãy đóng game trước khi đổi khung hình (game ghi đè graphics.ini khi thoát).");
+            ShowIniSize();
+            return;
+        }
+        int i = _size.SelectedIndex;
+        if (i < 0) return;
+        try
+        {
+            var text = File.ReadAllText(_iniPath);
+            string eol = text.Contains("\r\n") ? "\r\n" : "\n";
+            var lines = text.Replace("\r\n", "\n").Split('\n').ToList();
+            void Set(string key, string val)
+            {
+                int k = lines.FindIndex(l => l.StartsWith(key + "=", StringComparison.OrdinalIgnoreCase));
+                if (k >= 0) lines[k] = key + "=" + val; else lines.Insert(Math.Max(0, lines.Count - (lines.Last() == "" ? 1 : 0)), key + "=" + val);
+            }
+            if (i == 0) Set("FULLSCREEN", "1");
+            else { Set("FULLSCREEN", "0"); Set("SCREEN_WIDTH", Sizes[i].W.ToString()); Set("SCREEN_HEIGHT", Sizes[i].H.ToString()); }
+            File.WriteAllText(_iniPath, string.Join(eol, lines));
+            _log($"[Giả lập XH] Đã ghi khung hình \"{SizeNames[i]}\" vào graphics.ini. Mở lại game để áp dụng.");
+        }
+        catch (Exception ex) { _log("[Giả lập XH] Không ghi được graphics.ini: " + ex.Message); }
     }
 
     private static bool IsAdmin()
@@ -183,12 +230,6 @@ public sealed class RankedTab : UserControl
                 ? "Game FO3 đang chạy quyền admin: hãy mở tool bằng quyền admin (chuột phải > Run as administrator)"
                 : $"Game FO3: đã thấy cửa sổ ({r.Width}x{r.Height})";
             _lblGame.ForeColor = _blocked ? Color.FromArgb(230, 160, 60) : Color.FromArgb(70, 210, 120);
-            if (_origSize == null) _origSize = (r.Width, r.Height);
-            if (!_size.DroppedDown && !_resizing)
-            {
-                int idx = Array.FindIndex(Sizes, s => s.W == r.Width && s.H == r.Height);
-                _size.SelectedIndex = idx > 1 ? idx : (_size.SelectedIndex > 1 || _size.SelectedIndex < 0 ? 0 : _size.SelectedIndex);
-            }
         }
         else
         {
@@ -198,16 +239,15 @@ public sealed class RankedTab : UserControl
         RefreshEnabled();
     }
 
-    private bool _resizing;
-
-    /// <summary>No game window = nothing on the tab can work, so everything is disabled; while running only Dừng is live.</summary>
+    /// <summary>No game window = nothing on the tab can work, so everything is disabled; while running only Dừng is live.
+    /// The frame size is the opposite: it edits a file the game reads at start, so it is only enabled while the game is closed.</summary>
     private void RefreshEnabled()
     {
         bool running = _runner.IsRunning;
         bool usable = _gameFound && !_blocked;
         bool on = usable && !running;
         _numMatches.Enabled = _numCooldown.Enabled = _tactic.Enabled = _formation.Enabled = on;
-        _size.Enabled = usable;
+        _size.Enabled = !_gameFound && _iniPath != null;
         _btnStart.Enabled = on;
         _btnStop.Enabled = running;
     }

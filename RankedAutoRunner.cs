@@ -564,19 +564,6 @@ public static class WinApi
         return PostMessage(hWnd, WM_NULL, IntPtr.Zero, IntPtr.Zero) || Marshal.GetLastWin32Error() != 5;   // 5 = access denied (UIPI)
     }
 
-    public static void Maximize(IntPtr h) => ShowWindow(h, 3);
-    public static void Restore(IntPtr h) => ShowWindow(h, 9);
-
-    /// <summary>Resizes the game window so that its client area (the drawn part) is width x height. Returns false if the window did not take it.</summary>
-    public static bool SetClientSize(IntPtr hWnd, int width, int height)
-    {
-        if (hWnd == IntPtr.Zero || !GetWindowRect(hWnd, out RECT w) || !GetClientRect(hWnd, out RECT c)) return false;
-        int extraW = w.Width - c.Width, extraH = w.Height - c.Height;
-        SetWindowPos(hWnd, IntPtr.Zero, 0, 0, width + extraW, height + extraH, 0x0002 | 0x0004 | 0x0010);   // NOMOVE | NOZORDER | NOACTIVATE
-        Thread.Sleep(300);
-        return GetClientRect(hWnd, out RECT n) && Math.Abs(n.Width - width) <= 2 && Math.Abs(n.Height - height) <= 2;
-    }
-
     public static void ActivateWindow(IntPtr hWnd)
     {
         if (hWnd == IntPtr.Zero) return;
