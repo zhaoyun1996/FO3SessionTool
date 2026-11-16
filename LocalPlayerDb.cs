@@ -39,6 +39,7 @@ public sealed class LocalPlayerDb
     // ---- loading (lazy, once, off the UI thread) -------------------------------------------------------------------------------
     private static Task<LocalPlayerDb?>? _task;
     private static string? _configuredDir;
+    internal static string? ConfiguredDir => _configuredDir;
 
     /// <summary>Shared instance; null when the game files cannot be found or read. Never throws.</summary>
     public static Task<LocalPlayerDb?> GetAsync(string? gameDir = null)

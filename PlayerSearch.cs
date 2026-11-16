@@ -288,8 +288,41 @@ public sealed class PlayerSearch : IDisposable
     private static string LearnedPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "FO3SessionTool", "learned.json");
     private sealed class Learned { public Dictionary<int, string[]> Nations { get; set; } = new(); public Dictionary<int, string> Seasons { get; set; } = new(); }
     private bool _learnedLoaded;
+    // Season names as the game itself shows them: data\ui\external\LANGUAGESTRING_VIE.json (TRANSFERMARKET_SEASON_n, else CHATTING_SEASON_HEADER_n).
+    private Dictionary<int, string>? _gameSeasons;
+    private Dictionary<int, string> GameSeasons()
+    {
+        if (_gameSeasons != null) return _gameSeasons;
+        var result = new Dictionary<int, string>();
+        try
+        {
+            var data = LocalPlayerDb.FindDataFile(LocalPlayerDb.ConfiguredDir);   // ...\data\data_0.big
+            var file = data == null ? null : Path.Combine(Path.GetDirectoryName(data)!, "ui", "external", "LANGUAGESTRING_VIE.json");
+            if (file != null && File.Exists(file))
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(file));
+                var full = new Dictionary<int, string>(); var head = new Dictionary<int, string>();
+                foreach (var p in doc.RootElement.EnumerateObject())
+                {
+                    if (p.Value.ValueKind != System.Text.Json.JsonValueKind.String) continue;
+                    var m = Regex.Match(p.Name, @"^(TRANSFERMARKET_SEASON|CHATTING_SEASON_HEADER)_(\d+)$");
+                    if (!m.Success) continue;
+                    int id = int.Parse(m.Groups[2].Value);
+                    var v = (p.Value.GetString() ?? "").Trim();
+                    if (v.Length <= 1 || v.StartsWith("Chọn")) continue;   // placeholders ("." etc.)
+                    (m.Groups[1].Value == "TRANSFERMARKET_SEASON" ? full : head)[id] = v;
+                }
+                foreach (var kv in head) result[kv.Key] = kv.Value;
+                foreach (var kv in full) result[kv.Key] = kv.Value;   // the full name wins over the short header
+            }
+        }
+        catch { }
+        return _gameSeasons = result;
+    }
+
     public string SeasonLabelOf(int season)
     {
+        if (GameSeasons().TryGetValue(season, out var g)) return g;   // the game decides
         LoadLearned();
         if (_seasonLabels.TryGetValue(season, out var l)) return l;
         return season == 33 && _seasonLabels.TryGetValue(31, out var l31) ? l31 : "";   // the site shows season 33 as season 31 (EUROLEAGUE LEGEND)
@@ -342,7 +375,8 @@ public sealed class PlayerSearch : IDisposable
         if (db == null || row == null) return null;
         LoadLearned();
         var d = db.ToDetail(row, "", db.ClubOf(spid));
-        if (_seasonLabels.TryGetValue(d.Season, out var label)) d = d with { SeasonLabel = label };
+        var gl = SeasonLabelOf(d.Season);
+        if (gl.Length > 0) d = d with { SeasonLabel = gl };
         if (_nations.TryGetValue(row.Nation, out var nat)) d = d with { Nation = nat[0], NationCode = nat[1] };
 
         var sibs = db.Siblings(row).Take(4).ToList();
