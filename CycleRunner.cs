@@ -11,7 +11,7 @@ namespace FO3SessionTool;
 /// (only offers of the player being worked on). KeepMode: neither trade nor sell, the cards that reach the target level are just kept
 /// (buy and merge until EP runs out, the storage is full or the user stops).
 /// </summary>
-public sealed record CycleOptions(long TradeMin = 900_000_000, long TradeMax = 1_000_000_000, int MaxLossRounds = 2, int StorageSlots = 200, long StopBelowEp = 0, bool SellMode = false, bool AutoCollect = true, bool KeepMode = false);
+public sealed record CycleOptions(long TradeMin = 900_000_000, long TradeMax = 1_000_000_000, int MaxLossRounds = 2, int StorageSlots = 200, long StopBelowEp = 0, bool SellMode = false, bool AutoCollect = true, bool KeepMode = false, IReadOnlySet<int>? PreferSeasons = null);
 
 /// <summary>One trade round: the cost of the cards of one batch against what the trade of that batch paid.</summary>
 public sealed record RoundStat(int Round, int Bought, int Merged, int Cards, long CardValue, long Cost, long IncomeEp, long ReceivedPlayerPrice)
@@ -494,7 +494,18 @@ public sealed class CycleRunner
             foreach (var o in prop.Options)
                 _log($"[Xoay vòng/Giao dịch] Phương án {o.Index + 1}: {await PlayerNames.DescribeAsync(o.Spid)} +{o.Grade} (giá {o.Price:N0}) + {o.Ep:N0} EP = {o.Value:N0}");
             var best = prop.Options.OrderByDescending(o => o.Value).First();
-            _log($"[Xoay vòng/Giao dịch] Chọn phương án {best.Index + 1} (tổng lớn nhất {best.Value:N0}).");
+            if (opt.PreferSeasons is { Count: > 0 })
+            {
+                var preferred = prop.Options.Where(o => opt.PreferSeasons.Contains((int)(o.Spid / 1_000_000))).OrderByDescending(o => o.Value).FirstOrDefault();
+                if (preferred != null)
+                {
+                    _log($"[Xoay vòng/Giao dịch] Chọn phương án {preferred.Index + 1}: cầu thủ thuộc mùa ưu tiên" +
+                         (preferred.Index != best.Index ? $" (tổng {preferred.Value:N0}, thấp hơn phương án lớn nhất {best.Value:N0} là {best.Value - preferred.Value:N0} EP)." : ", cũng là tổng lớn nhất."));
+                    best = preferred;
+                }
+                else _log($"[Xoay vòng/Giao dịch] Không có phương án nào thuộc mùa ưu tiên, chọn phương án {best.Index + 1} (tổng lớn nhất {best.Value:N0}).");
+            }
+            else _log($"[Xoay vòng/Giao dịch] Chọn phương án {best.Index + 1} (tổng lớn nhất {best.Value:N0}).");
 
             try
             {

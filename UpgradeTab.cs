@@ -53,6 +53,28 @@ public sealed class UpgradeTab : UserControl
     private readonly DarkNumber _stopBelow = new() { Minimum = 0, Maximum = 1_000_000_000_000M, Value = 0, ThousandsSeparator = true, Increment = 100_000_000, Anchor = AnchorStyles.Left, Width = 160 };
     private readonly Label _stopBelowLabel = new() { Text = "EP tối thiểu", AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Margin = new Padding(3, 0, 8, 0), Visible = false };
     private TableLayoutPanel _buyGrid = null!;
+    private readonly Label _preferLabel = new() { Text = "Ưu tiên mùa thẻ", AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Margin = new Padding(3, 0, 8, 0), Visible = false };
+    private readonly DarkButton _btnPrefer = new() { Text = "Không ưu tiên (chọn...)", Width = 260, Anchor = AnchorStyles.Left, Margin = new Padding(3, 0, 3, 0), Visible = false };
+    private HashSet<int> _preferSeasons = LoadPrefer();
+    private static string PreferFile => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "FO3SessionTool", "trade-seasons.json");
+    private static HashSet<int> LoadPrefer()
+    {
+        try { return (System.Text.Json.JsonSerializer.Deserialize<List<int>>(File.ReadAllText(PreferFile)) ?? new()).ToHashSet(); } catch { return new(); }
+    }
+    private void SavePrefer()
+    {
+        try { Directory.CreateDirectory(Path.GetDirectoryName(PreferFile)!); File.WriteAllText(PreferFile, System.Text.Json.JsonSerializer.Serialize(_preferSeasons.OrderBy(x => x).ToList())); } catch { }
+    }
+    private string SeasonLabel(int s) { var l = _players.SeasonLabelOf(s); return l.Length > 0 ? $"Mùa {s} · {l}" : $"Mùa {s}"; }
+    private void UpdatePreferText() =>
+        _btnPrefer.Text = _preferSeasons.Count == 0 ? "Không ưu tiên (chọn...)" : "Ưu tiên: " + string.Join(", ", _preferSeasons.OrderBy(x => x).Take(4).Select(s => "M" + s)) + (_preferSeasons.Count > 4 ? $" +{_preferSeasons.Count - 4}" : "");
+    private void PickPreferred()
+    {
+        var seasons = _players.AllowedSeasons?.Where(s => s > 0) ?? PlayerSearch.SeasonSpriteX.Keys.Where(s => s > 0);
+        using var dlg = new SeasonPickDialog(seasons.Concat(_preferSeasons), SeasonLabel, _preferSeasons);
+        if (dlg.ShowDialog(FindForm()) != DialogResult.OK) return;
+        _preferSeasons = dlg.Selected; SavePrefer(); UpdatePreferText();
+    }
     private readonly Label _tradeMinLabel = new() { Text = "Đổi khi từ (EP)", AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Margin = new Padding(3, 0, 8, 0), Visible = false };
     private readonly DarkCombo _pace = new() { DropDownStyle = ComboBoxStyle.DropDownList, Anchor = AnchorStyles.Left | AnchorStyles.Right };
     private static readonly double[] PaceFactor = { 1.8, 1.0, 0.5, 0.25 };
@@ -172,11 +194,11 @@ public sealed class UpgradeTab : UserControl
     private Control BuildBuyBox()
     {
         var box = new DarkGroup { Text = "2. Nguồn thẻ", Dock = DockStyle.Fill };
-        var t = Grid(2, 11);
+        var t = Grid(2, 12);
         _buyGrid = t;
         t.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 128));
         t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        for (int i = 0; i < 10; i++) t.RowStyles.Add(new RowStyle(SizeType.Absolute, Theme.RowH));
+        for (int i = 0; i < 11; i++) t.RowStyles.Add(new RowStyle(SizeType.Absolute, Theme.RowH));
         t.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
         t.Controls.Add(RowLbl("Nguồn thẻ"), 0, 0);
@@ -206,6 +228,11 @@ public sealed class UpgradeTab : UserControl
         t.Controls.Add(_tradeMin, 1, 7);
         t.Controls.Add(_collectLabel, 0, 8);
         t.Controls.Add(Pair(_collectAuto, _collectManual), 1, 8);
+        t.Controls.Add(_preferLabel, 0, 10);
+        t.Controls.Add(_btnPrefer, 1, 10);
+        _btnPrefer.Click += (_, _) => PickPreferred();
+        UpdatePreferText();
+        _tip.SetToolTip(_btnPrefer, "Khi giao dịch, ưu tiên phương án có cầu thủ thuộc các mùa được chọn (không có thì chọn tổng giá trị lớn nhất).");
         t.Controls.Add(_stopBelowLabel, 0, 9);
         _stopBelow.Margin = new Padding(3, 0, 3, 0);
         t.Controls.Add(_stopBelow, 1, 9);
@@ -564,7 +591,7 @@ public sealed class UpgradeTab : UserControl
         _tip.SetToolTip(_btnRun, _loggedIn ? "Lấy đủ thẻ (mua hoặc từ kho) rồi ép theo rule" : "Hãy đăng nhập trước");
         foreach (Control c in new Control[] { _name, _btnFind, _results, _modeBuy, _modeStock, _pace }) c.Enabled = !_running;
         _runOnce.Enabled = _runLoop.Enabled = !_running && !StockMode;
-        _tradeMin.Enabled = _stopBelow.Enabled = _outMode.Enabled = _collectAuto.Enabled = _collectManual.Enabled = !_running;
+        _btnPrefer.Enabled = !_running; _tradeMin.Enabled = _stopBelow.Enabled = _outMode.Enabled = _collectAuto.Enabled = _collectManual.Enabled = !_running;
         foreach (var r in _tgt) if (r != null) r.Enabled = !_running;
         _qty.Enabled = _cnt.Enabled = !_running && !StockMode;
         _byCards.Enabled = _byPlayers.Enabled = !_running && !StockMode;
@@ -589,6 +616,7 @@ public sealed class UpgradeTab : UserControl
         Row(7, loop && !sell && !keep);   // trade threshold
         Row(8, sell);            // money of sold cards: collected by the tool or by hand
         Row(9, loop);
+        Row(10, loop && !sell && !keep);   // preferred card seasons for the trade
     }
 
     private void UpdateStepVisibility()
@@ -643,7 +671,7 @@ public sealed class UpgradeTab : UserControl
         bool loopMode = _runLoop.Checked && !StockMode;
         var plan = new UpgradePlan(spid, name, StockMode || loopMode ? 0 : BuyQty, StockMode ? 0 : (long)_maxPrice.Value,
             TargetLevel, Rules, StockMode, pace, SellAfter: !_runLoop.Checked && OutSell, CollectAfter: _collectAuto.Checked);
-        if (_runLoop.Checked && !StockMode) CycleRequested?.Invoke(plan, new CycleOptions(TradeMin: (long)_tradeMin.Value, StopBelowEp: (long)_stopBelow.Value, SellMode: OutSell, AutoCollect: _collectAuto.Checked, KeepMode: OutKeep));
+        if (_runLoop.Checked && !StockMode) CycleRequested?.Invoke(plan, new CycleOptions(TradeMin: (long)_tradeMin.Value, StopBelowEp: (long)_stopBelow.Value, SellMode: OutSell, AutoCollect: _collectAuto.Checked, KeepMode: OutKeep, PreferSeasons: _preferSeasons.ToHashSet()));
         else RunRequested?.Invoke(plan);
     }
 }
