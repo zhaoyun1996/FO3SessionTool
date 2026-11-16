@@ -561,6 +561,14 @@ public static class WinApi
     [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags);
     [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr h, out RECT r);
 
+    /// <summary>False when Windows refuses to deliver messages to the game window because the game runs as administrator and the tool does not.</summary>
+    public static bool CanPostTo(IntPtr hWnd)
+    {
+        if (hWnd == IntPtr.Zero) return false;
+        const uint WM_NULL = 0;
+        return PostMessage(hWnd, WM_NULL, IntPtr.Zero, IntPtr.Zero) || Marshal.GetLastWin32Error() != 5;   // 5 = access denied (UIPI)
+    }
+
     /// <summary>A real key press (SendInput): the game is brought to the front for a moment and the previous window is restored afterwards.</summary>
     public static void SendRealKey(IntPtr hWnd, ushort vk)
     {

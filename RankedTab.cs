@@ -153,16 +153,21 @@ public sealed class RankedTab : UserControl
     }
 
     private bool _gameFound;
+    private bool _blocked;
 
     private void CheckGame()
     {
         var h = WinApi.FindGameWindow();
         _gameFound = h != IntPtr.Zero && WinApi.GetClientRect(h, out WinApi.RECT r0) && r0.Width > 0;
+        _blocked = false;
         if (_gameFound)
         {
             WinApi.GetClientRect(h, out WinApi.RECT r);
-            _lblGame.Text = $"Game FO3: đã thấy cửa sổ ({r.Width}x{r.Height})";
-            _lblGame.ForeColor = Color.FromArgb(70, 210, 120);
+            _blocked = !WinApi.CanPostTo(h);
+            _lblGame.Text = _blocked
+                ? "Game FO3 đang chạy quyền admin: hãy mở tool bằng quyền admin (chuột phải > Run as administrator)"
+                : $"Game FO3: đã thấy cửa sổ ({r.Width}x{r.Height})";
+            _lblGame.ForeColor = _blocked ? Color.FromArgb(230, 160, 60) : Color.FromArgb(70, 210, 120);
             if (_origSize == null) _origSize = (r.Width, r.Height);
             if (!_size.DroppedDown && !_resizing)
             {
@@ -184,9 +189,10 @@ public sealed class RankedTab : UserControl
     private void RefreshEnabled()
     {
         bool running = _runner.IsRunning;
-        bool on = _gameFound && !running;
+        bool usable = _gameFound && !_blocked;
+        bool on = usable && !running;
         _numMatches.Enabled = _numCooldown.Enabled = _tactic.Enabled = _formation.Enabled = _realKeys.Enabled = on;
-        _size.Enabled = _gameFound;
+        _size.Enabled = usable;
         _btnStart.Enabled = on;
         _btnStop.Enabled = running;
     }

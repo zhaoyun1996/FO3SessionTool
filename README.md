@@ -100,6 +100,8 @@ dotnet publish FO3SessionTool.csproj -c Release -r win-x64 --self-contained `
   -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o dist
 ```
 
+Tool chạy quyền người dùng thường. Riêng tab Giả lập xếp hạng cần mở tool bằng quyền admin (chuột phải > Run as administrator) khi game đang chạy admin; tab sẽ báo và khoá nếu thiếu quyền.
+
 Chép `config.json` vào `dist\` cạnh `FO3SessionTool.exe`. Lệnh publish sẽ lỗi nếu `dist\FO3SessionTool.exe` đang chạy; hãy đóng tool trước.
 
 ### 4.1. Chạy trên máy khác, và .NET
