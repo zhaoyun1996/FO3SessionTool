@@ -26,6 +26,7 @@ public sealed class BuyTab : UserControl
     private readonly Label _status = new() { AutoSize = true, ForeColor = Theme.Dim, Anchor = AnchorStyles.Left };
 
     private readonly DarkButton _btnBuyOnce = new() { Text = "Mua 1 thẻ (thủ công)", Width = 190, Anchor = AnchorStyles.Left };
+    private readonly DarkButton _btnPrice = new() { Text = "Tính giá theo chỉ số và thẻ cộng", Width = 240, Anchor = AnchorStyles.Left };
     private readonly DarkButton _btnAuto = new() { Text = "Bắt đầu mua tự động", Width = 190, Anchor = AnchorStyles.Left };
     private readonly DarkNumber _floorEp = new() { Minimum = 0, Maximum = 1_000_000_000_000M, ThousandsSeparator = true, Increment = 100_000, Width = 150, Anchor = AnchorStyles.Left };
     private readonly DarkNumber _maxPrice = new() { Minimum = 0, Maximum = 1_000_000_000_000M, ThousandsSeparator = true, Increment = 1000, Width = 150, Anchor = AnchorStyles.Left };
@@ -98,7 +99,8 @@ public sealed class BuyTab : UserControl
         _watch.Margin = new Padding(3, 10, 3, 0); side.Controls.Add(_watch);
         _btnBuyOnce.Width = 240; _btnAuto.Width = 240;
         _btnBuyOnce.Margin = new Padding(3, 16, 3, 0); _btnAuto.Margin = new Padding(3, 8, 3, 0);
-        side.Controls.Add(_btnBuyOnce); side.Controls.Add(_btnAuto);
+        _btnPrice.Margin = new Padding(3, 8, 3, 0);
+        side.Controls.Add(_btnBuyOnce); side.Controls.Add(_btnAuto); side.Controls.Add(_btnPrice);
         _status.MaximumSize = new Size(250, 0); _status.Margin = new Padding(3, 10, 3, 0);
         side.Controls.Add(_status);
 
@@ -135,6 +137,7 @@ public sealed class BuyTab : UserControl
         _btnFind.Click += async (_, _) => await FindAsync();
         _name.KeyDown += async (_, e) => { if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; await FindAsync(); } };
         _btnBuyOnce.Click += async (_, _) => await BuyOnceAsync();
+        _btnPrice.Click += (_, _) => ShowPrices();
         _btnAuto.Click += async (_, _) => await ToggleAutoAsync();
         _grid.CellClick += (_, e) =>
         {
@@ -401,11 +404,24 @@ public sealed class BuyTab : UserControl
 
     private bool Auto => _cts != null;
 
+    /// <summary>Read-only price table (chỉ số and giá at +1..+13) for the ticked players, at most 5 at a time.</summary>
+    private void ShowPrices()
+    {
+        var api = _api();
+        if (api == null) return;
+        var sel = Selected();
+        if (sel.Count == 0) { _status.Text = "Tick cầu thủ cần tính giá."; return; }
+        if (sel.Count > 5) { _status.Text = $"Đã tick {sel.Count} cầu thủ, chỉ tính 5 người đầu."; sel = sel.Take(5).ToList(); }
+        using var dlg = new PriceDialog(api, sel.Select(i => new PriceDialog.Entry(i.Spid, i.Name.Length > 0 ? i.Name : "SPID " + i.Spid, i.Season, i.Overall)).ToList(), SeasonName);
+        dlg.ShowDialog(FindForm());
+    }
+
     private void UpdateUi()
     {
         bool login = _api() != null;
         bool any = _picked.Count > 0;
         _btnBuyOnce.Enabled = login && any && !Auto && !_manualBusy;
+        _btnPrice.Enabled = login && any;
         _btnAuto.Enabled = login && (Auto || any);
         _btnAuto.Text = Auto ? "Dừng mua" : "Bắt đầu mua tự động";
         _btnFind.Enabled = true;

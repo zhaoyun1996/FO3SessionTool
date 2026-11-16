@@ -515,6 +515,25 @@ public sealed class GameApi
         catch { return null; }
     }
 
+    /// <summary>GET /static/db/PLAYERGRADE: grade -> bonus added to every attribute of the card at that level (+1 = 5, +2 = 6, ...).</summary>
+    public async Task<Dictionary<int, int>?> GetGradeBoostsAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            var arr = JsonNode.Parse(await GetAsync("/static/db/PLAYERGRADE", ct)) as JsonArray;
+            if (arr == null) return null;
+            var d = new Dictionary<int, int>();
+            foreach (var n in arr)
+            {
+                if (n?["grade"] == null) continue;
+                d[n["grade"]!.GetValue<int>()] = n["boost"]?["PLAYER_ALLATTRIBUTES_ALL"]?.GetValue<int>() ?? 0;
+            }
+            return d.Count > 0 ? d : null;
+        }
+        catch (OperationCanceledException) { throw; }
+        catch { return null; }
+    }
+
     public sealed record LeagueMe(int TeamId, int NextRound, int MaxRound, int[] Teams, long OpeningDay);
     public sealed record LeagueSim(bool Ok, int HomeGoals, int AwayGoals, string Raw);
 
