@@ -17,7 +17,10 @@ public sealed class RankedTab : UserControl
     private readonly DarkNumber _numMatches = new() { Minimum = 0, Maximum = 1000, Width = 90 };
     private readonly DarkNumber _numCooldown = new() { Minimum = 0, Maximum = 120, Width = 90 };
     private readonly DarkCombo _formation = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 190 };
-    private readonly DarkCheck _realKeys = new() { Text = "Dùng phím thật cho Space (game nhảy lên trước 1 giây)", Width = 400, Height = 24 };
+    private readonly DarkCheck _realKeys = new() { Text = "Gửi Space bằng phím thật khi cần \"Bỏ qua\"", Width = 400, Height = 24 };
+    private readonly Label _lblRealKeysHelp = new() { AutoSize = true, MaximumSize = new Size(560, 0), ForeColor = Theme.Dim, Text = "Cảnh \"Bỏ qua [SPACE]\" cần phím Space. Mặc định tool gửi phím vào cửa sổ game mà không đụng bàn phím của bạn; nếu game không bỏ qua cảnh đó, hãy tick ô này: tool sẽ đưa game lên trước khoảng 1 giây, bấm Space thật rồi trả lại cửa sổ bạn đang dùng. Chuột vẫn không bị chiếm." };
+    private readonly Label _lblAdmin = new() { AutoSize = true, Font = Theme.Bold };
+    private readonly Label _lblAdminNote = new() { AutoSize = true, MaximumSize = new Size(760, 0), ForeColor = Theme.Dim, Text = "Tab này điều khiển cửa sổ game bằng cách gửi chuột và phím vào đó. Windows chỉ cho phép việc này khi tool có quyền ngang game: nếu game chạy quyền admin thì tool cũng phải chạy admin (chuột phải FO3SessionTool.exe > Run as administrator). Chưa đủ quyền thì các ô bên dưới bị khoá." };
     private readonly DarkCombo _size = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 190 };
     private readonly DarkCombo _tactic = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 190 };
 
@@ -77,7 +80,8 @@ public sealed class RankedTab : UserControl
 
     private void BuildLayout()
     {
-        var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3 };
+        var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4 };
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
@@ -88,6 +92,15 @@ public sealed class RankedTab : UserControl
         top.Controls.Add(_lblGame);
         top.Controls.Add(_lblScreen);
         root.Controls.Add(top, 0, 0);
+
+        bool admin = IsAdmin();
+        _lblAdmin.Text = admin ? "Quyền của tool: ĐANG CHẠY ADMIN" : "Quyền của tool: CHƯA chạy admin";
+        _lblAdmin.ForeColor = admin ? Color.FromArgb(70, 210, 120) : Color.FromArgb(230, 160, 60);
+        var adminBox = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, Margin = new Padding(0, 0, 0, 8) };
+        _lblAdmin.Margin = new Padding(0, 0, 0, 2);
+        adminBox.Controls.Add(_lblAdmin);
+        adminBox.Controls.Add(_lblAdminNote);
+        root.Controls.Add(adminBox, 0, 1);
 
         // settings: a plain two-column grid (label, control) so nothing overlaps
         var grp = new DarkGroup { Text = "Cài đặt trận đấu", Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Padding = new Padding(12, 22, 12, 12), Margin = new Padding(0, 0, 0, 8) };
@@ -109,8 +122,10 @@ public sealed class RankedTab : UserControl
         Row("Khung hình game", SizeRow());
         grid.Controls.Add(new Label());
         grid.Controls.Add(_realKeys);
+        grid.Controls.Add(new Label());
+        grid.Controls.Add(_lblRealKeysHelp);
         grp.Controls.Add(grid);
-        root.Controls.Add(grp, 0, 1);
+        root.Controls.Add(grp, 0, 2);
 
         var act = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Top, WrapContents = true };
         _btnStart.Margin = new Padding(0, 0, 12, 8);
@@ -118,7 +133,7 @@ public sealed class RankedTab : UserControl
         _lblState.Margin = new Padding(0, 12, 24, 0);
         _lblProgress.Margin = new Padding(0, 12, 0, 0);
         act.Controls.AddRange(new Control[] { _btnStart, _btnStop, _lblState, _lblProgress });
-        root.Controls.Add(act, 0, 2);
+        root.Controls.Add(act, 0, 3);
 
         Controls.Add(root);
     }
@@ -150,6 +165,12 @@ public sealed class RankedTab : UserControl
         }
         _log(ok ? $"[Giả lập XH] Khung hình game: {name}." : $"[Giả lập XH] Game không nhận khung hình {name} (cửa sổ có thể bị khoá kích thước).");
         CheckGame();
+    }
+
+    private static bool IsAdmin()
+    {
+        try { using var id = System.Security.Principal.WindowsIdentity.GetCurrent(); return new System.Security.Principal.WindowsPrincipal(id).IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator); }
+        catch { return false; }
     }
 
     private bool _gameFound;
