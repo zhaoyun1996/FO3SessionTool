@@ -449,6 +449,56 @@ public sealed class GameApi
         catch { return null; }
     }
 
+    // ---- openable items (packs, EP cards), endpoints observed in the game capture ----------
+
+    /// <summary>One stack of items in the bag. Kind is the server's item type (PLAYERPACK = card pack, EP_LOTTERY = lucky EP card).</summary>
+    public sealed record BagItem(string Id, int ItemId, int Count, string Name, string Kind, string Desc);
+
+    public const string KindPlayerPack = "PLAYERPACK";
+    public const string KindEpLottery = "EP_LOTTERY";
+
+    /// <summary>GET /coach/me, the "items" list: every stack the account holds (the packs and EP cards among them can be opened).</summary>
+    public async Task<List<BagItem>> GetBagItemsAsync(CancellationToken ct = default)
+    {
+        var list = new List<BagItem>();
+        var n = JsonNode.Parse(await GetAsync("/coach/me", ct));
+        if (n?["items"] is not JsonArray items) return list;
+        foreach (var it in items)
+        {
+            if (it == null) continue;
+            var id = it["_id"]?.GetValue<string>() ?? it["id"]?.GetValue<string>();
+            var sd = it["staticdata"];
+            if (id == null || sd == null) continue;
+            int count = it["count"]?.GetValue<int>() ?? 0;
+            if (count <= 0) continue;
+            list.Add(new BagItem(id, it["itemid"]?.GetValue<int>() ?? 0, count, sd["name"]?.GetValue<string>() ?? "?", sd["type"]?.GetValue<string>() ?? "", sd["desc"]?.GetValue<string>() ?? ""));
+        }
+        return list;
+    }
+
+    /// <summary>Result of using one item. Spid/Grade are set when a player card came out; the raw text is kept for the log (and for EP cards, whose answer shape was not captured).</summary>
+    public sealed record UseResult(bool Ok, long Spid, int Grade, long Ep, string Raw);
+
+    /// <summary>POST /item/{id}/use {"id": id}: uses one unit of the stack (opens one pack / one EP card).</summary>
+    public async Task<UseResult> UseItemAsync(string itemStackId, CancellationToken ct = default)
+    {
+        var body = new JsonObject { ["id"] = itemStackId };
+        using var content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json");
+        using var resp = await _http.PostAsync($"{_base}/item/{itemStackId}/use", content, ct);
+        var text = await resp.Content.ReadAsStringAsync(ct);
+        bool ok = false; long spid = 0; int grade = 0; long ep = 0;
+        try
+        {
+            var n = JsonNode.Parse(text);
+            ok = n?["result"]?.GetValue<bool>() == true;
+            spid = n?["player"]?["spid"]?.GetValue<long>() ?? 0;
+            grade = n?["player"]?["grade"]?.GetValue<int>() ?? 0;
+            if (ok) ApplyMoney(text);
+        }
+        catch { }
+        return new UseResult(ok && resp.IsSuccessStatusCode, spid, grade, ep, resp.IsSuccessStatusCode ? text : $"HTTP {(int)resp.StatusCode}: {text}");
+    }
+
     public sealed record LeagueMe(int TeamId, int NextRound, int MaxRound, int[] Teams, long OpeningDay);
     public sealed record LeagueSim(bool Ok, int HomeGoals, int AwayGoals, string Raw);
 

@@ -100,7 +100,7 @@ dotnet publish FO3SessionTool.csproj -c Release -r win-x64 --self-contained `
   -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o dist
 ```
 
-Tool chạy quyền người dùng thường. Riêng tab Giả lập xếp hạng cần mở tool bằng quyền admin (chuột phải > Run as administrator) khi game đang chạy admin; tab sẽ báo và khoá nếu thiếu quyền.
+Tool chạy quyền người dùng thường. Riêng phần Giả lập xếp hạng (trong tab Trận đấu) cần mở tool bằng quyền admin (chuột phải > Run as administrator) khi game đang chạy admin; tab sẽ báo và khoá nếu thiếu quyền.
 
 Chép `config.json` vào `dist\` cạnh `FO3SessionTool.exe`. Lệnh publish sẽ lỗi nếu `dist\FO3SessionTool.exe` đang chạy; hãy đóng tool trước.
 
@@ -210,6 +210,15 @@ Nếu báo chưa có phiên hoặc phiên hết hạn: chạy lại bước 1 v�
 - **Mua tự động**: mỗi cầu thủ chọn = một luồng chạy song song; dừng khi EP xuống dưới mức đặt, đủ số thẻ, hết kho hoặc bấm Dừng.
 - Các khoảng chờ giữa các lần mua (cả ở tab Ép thẻ) đã tăng lên để giảm lỗi mua.
 
-## Tab "Mùa giải"
+## Tab "Trận đấu" > "Mùa giải"
+
+Tab "Trận đấu" gồm hai phần: "Giả lập xếp hạng" (điều khiển cửa sổ game) và "Mùa giải" (bên dưới).
 
 Chế độ Mùa giải (league2) của game, server tự tính tỉ số từng vòng. Tool gọi đúng các lệnh game gọi: `league2/sponsor/achievement`, `league2/history/players/league`, `coach/me`, `league2/match/sim`, `league2/back`, `matchup`. Lịch (ngày, đội nhà, đội khách mỗi vòng) không có trên API nên được nạp từ file bản ghi (`capture\game_capture_redacted.txt`) của một mùa đã giả lập trong game, lưu ở `%APPDATA%\FO3SessionTool\league_schedule.json`.
+
+## Tab "Mở vật phẩm"
+
+Mở các vật phẩm trong túi bằng đúng lệnh "Dùng" của game: `POST /item/{id}/use` với `{"id": "<id vật phẩm>"}`. Danh sách lấy từ `items` của `GET /coach/me` (mỗi mục có `staticdata.type`).
+- **Mở thẻ**: các gói có `type = PLAYERPACK` (ví dụ "Gói mùa thường 65+"), mỗi lần ra 1 thẻ cầu thủ (`player.spid`, `player.grade`). Chọn một loại gói hoặc "Tất cả", đặt số lượng (0 = hết). Kho đầy thì server báo "Exceed plyer limit" và tool dừng.
+- **Mở thẻ EP**: "Thẻ EP may mắn" (`type = EP_LOTTERY`, itemid 501), mỗi lần ra từ 1.000 đến 50.000 EP. Câu trả lời của server cho lệnh này chưa có trong file capture nên tool ghi nguyên văn câu trả lời vào nhật ký.
+Mỗi lần mở dùng hết 1 vật phẩm; tool hỏi xác nhận trước khi chạy và không chạy cùng lúc với ép thẻ, mua, giao dịch, mùa giải.

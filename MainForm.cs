@@ -43,7 +43,10 @@ public sealed class MainForm : Form
     private TabPage _tabRanked = null!;
     private BuyTab _buy = null!;
     private LeagueTab _league = null!;
-    private TabPage _tabLeague = null!;
+    private ItemsTab _items = null!;
+    private TabPage _tabItems = null!;
+    private DarkTabControl _matchTabs = null!;
+    private TabPage _subRanked = null!, _subLeague = null!;
     private CancellationTokenSource? _upCts;
 
     public MainForm(Config cfg)
@@ -119,23 +122,39 @@ public sealed class MainForm : Form
         _kho.CleanRequested += async cards => await OnCleanZeroAsync(cards);
         _tabKho = new TabPage("Kho cầu thủ") { Padding = new Padding(0, Theme.Gap, 0, 0) };
         _tabKho.Controls.Add(_kho);
-        _buy = new BuyTab(() => _api, async () => _sprite ??= await _players.LoadImageAsync(PlayerSearch.SpriteUrl) as Bitmap, _players, () => _upCts != null || _trading || _league.Running, Log);
+        _buy = new BuyTab(() => _api, async () => _sprite ??= await _players.LoadImageAsync(PlayerSearch.SpriteUrl) as Bitmap, _players, () => _upCts != null || _trading || _league.Running || _items.Running, Log);
         var tabBuy = new TabPage("Mua cầu thủ") { Padding = new Padding(0, Theme.Gap, 0, 0) };
         tabBuy.Controls.Add(_buy);
         _ranked = new RankedTab(Log);
-        _tabRanked = new TabPage("Giả lập xếp hạng") { Padding = new Padding(0, Theme.Gap, 0, 0) };
-        _tabRanked.Controls.Add(_ranked);
+        _league = new LeagueTab(() => _api, () => _upCts != null || _trading || _buy.Running || _items.Running, Log);
+        _items = new ItemsTab(() => _api, () => _upCts != null || _trading || _buy.Running || _league.Running, Log, () => { if (_api != null) _ = RefreshWalletAsync(_api); });
+        // "Trận đấu": the ranked simulation (drives the game window) and the league season (server side), as two sub-tabs
+        _matchTabs = new DarkTabControl { Dock = DockStyle.Fill, ItemSize = new Size(190, 30) };
+        _subRanked = new TabPage("Giả lập xếp hạng") { Padding = new Padding(0, Theme.Gap, 0, 0) };
+        _subRanked.Controls.Add(_ranked);
+        _subLeague = new TabPage("Mùa giải") { Padding = new Padding(0, Theme.Gap, 0, 0) };
+        _subLeague.Controls.Add(_league);
+        _matchTabs.TabPages.Add(_subRanked);
+        _matchTabs.TabPages.Add(_subLeague);
+        _matchTabs.SelectedIndexChanged += async (_, _) => { if (_matchTabs.SelectedTab == _subLeague) await _league.LoadAsync(); };
+        _tabRanked = new TabPage("Trận đấu") { Padding = new Padding(0, Theme.Gap, 0, 0) };
+        _tabRanked.Controls.Add(_matchTabs);
+        _tabItems = new TabPage("Mở vật phẩm") { Padding = new Padding(0, Theme.Gap, 0, 0) };
+        _tabItems.Controls.Add(_items);
         _tabs.TabPages.Add(_tabUpgrade);
         _tabs.TabPages.Add(tabBuy);
         _tabs.TabPages.Add(_tabKho);
         _tabs.TabPages.Add(_tabRanked);
-        _league = new LeagueTab(() => _api, () => _upCts != null || _trading || _buy.Running, Log);
-        _tabLeague = new TabPage("Mùa giải") { Padding = new Padding(0, Theme.Gap, 0, 0) };
-        _tabLeague.Controls.Add(_league);
-        _tabs.TabPages.Add(_tabLeague);
-        _tabs.SelectedIndexChanged += async (_, _) => { if (_applyingTabs) return; if (_tabs.SelectedTab == _tabKho) await _kho.ReloadAsync(); else if (_tabs.SelectedTab == _tabLeague) await _league.LoadAsync(); };
+        _tabs.TabPages.Add(_tabItems);
+        _tabs.SelectedIndexChanged += async (_, _) =>
+        {
+            if (_applyingTabs) return;
+            if (_tabs.SelectedTab == _tabKho) await _kho.ReloadAsync();
+            else if (_tabs.SelectedTab == _tabItems) await _items.LoadAsync();
+            else if (_tabs.SelectedTab == _tabRanked && _matchTabs.SelectedTab == _subLeague) await _league.LoadAsync();
+        };
         _tabs.TabPages.Add(_tabFind);
-        _tabOrder = new[] { _tabUpgrade, tabBuy, _tabKho, _tabRanked, _tabLeague, _tabFind };
+        _tabOrder = new[] { _tabUpgrade, tabBuy, _tabKho, _tabRanked, _tabItems, _tabFind };
         LoadHiddenTabs();
         ApplyTabs();
 
@@ -391,6 +410,7 @@ public sealed class MainForm : Form
         _kho.SetLoggedIn(false);
         _buy.SetLoggedIn(false);
         _league.SetLoggedIn(false);
+        _items.SetLoggedIn(false);
         _btnAuth.Text = "Đăng nhập";
         _acct.Text = "Chưa đăng nhập";
         _acct.ForeColor = Theme.Dim;
@@ -406,7 +426,7 @@ public sealed class MainForm : Form
     {
         var api = _api;
         if (api == null || _trading) return;
-        if (_upCts != null || _buy.Running || _league.Running) { Warn("Đang chạy ép thẻ / mua tự động, hãy dừng trước khi dọn thẻ."); return; }
+        if (_upCts != null || _buy.Running || _league.Running || _items.Running) { Warn("Đang chạy ép thẻ / mua tự động, hãy dừng trước khi dọn thẻ."); return; }
         cards = cards.Where(c => c.Grade == 0 && c.Group == GameApi.GroupNone).ToList();   // never anything else
         if (cards.Count == 0) return;
         var names = string.Join(", ", cards.GroupBy(c => c.Name.Length > 0 ? c.Name : c.Spid.ToString()).Select(g => g.Count() > 1 ? $"{g.Key} ×{g.Count()}" : g.Key).Take(12));
@@ -444,7 +464,7 @@ public sealed class MainForm : Form
     {
         var api = _api;
         if (api == null || _trading) return;
-        if (_upCts != null || _buy.Running || _league.Running) { Warn("Đang chạy ép thẻ / mua tự động, hãy dừng trước khi giao dịch."); return; }
+        if (_upCts != null || _buy.Running || _league.Running || _items.Running) { Warn("Đang chạy ép thẻ / mua tự động, hãy dừng trước khi giao dịch."); return; }
         _trading = true;
         _kho.SetTradeBusy(true);
         try
@@ -638,7 +658,7 @@ public sealed class MainForm : Form
     {
         if (_api == null) { Warn("Hãy đăng nhập trước."); return; }
         if (_upCts != null) return;
-        if (_buy.Running || _league.Running) { Warn("Đang mua tự động hoặc giả lập mùa giải, hãy dừng trước."); return; }
+        if (_buy.Running || _league.Running || _items.Running) { Warn("Đang mua tự động hoặc giả lập mùa giải, hãy dừng trước."); return; }
         plan = await WithCeilingAsync(plan);
 
         string sellNote = "";
@@ -695,7 +715,7 @@ public sealed class MainForm : Form
     {
         if (_api == null) { Warn("Hãy đăng nhập trước."); return; }
         if (_upCts != null) return;
-        if (_buy.Running || _league.Running) { Warn("Đang mua tự động hoặc giả lập mùa giải, hãy dừng trước."); return; }
+        if (_buy.Running || _league.Running || _items.Running) { Warn("Đang mua tự động hoặc giả lập mùa giải, hãy dừng trước."); return; }
         plan = await WithCeilingAsync(plan);
 
         var nl = Environment.NewLine;
