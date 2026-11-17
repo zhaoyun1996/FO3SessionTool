@@ -153,7 +153,7 @@ public sealed class ItemsTab : UserControl
 
     private async Task<string> OpenAsync(GameApi api, List<GameApi.BagItem> stacks, int total, bool isPack, double pace, CancellationToken ct)
     {
-        int opened = 0, failures = 0;
+        int opened = 0, failures = 0; long gotEp = 0;
         string stop = "";
         _log($"[Mở vật phẩm] Bắt đầu mở {total} {(isPack ? "gói thẻ" : "Thẻ EP may mắn")}.");
         try
@@ -167,9 +167,12 @@ public sealed class ItemsTab : UserControl
                     if (r.Ok)
                     {
                         failures = 0; opened++;
+                        long ep = r.Spid > 0 ? 0 : RewardEp(r.Raw);
+                        gotEp += ep;
                         _log(r.Spid > 0
                             ? $"[Mở vật phẩm] {st.Name}: ra thẻ {await PlayerNames.DescribeAsync(r.Spid, null, r.Grade)} ({opened}/{total})."
-                            : $"[Mở vật phẩm] {st.Name}: {GameApi.Trim(r.Raw)} ({opened}/{total})");
+                            : ep > 0 ? $"[Mở vật phẩm] {st.Name}: nhận {ep:N0} EP ({opened}/{total}), tổng {gotEp:N0} EP."
+                            : $"[Mở vật phẩm] {st.Name}: mở xong ({opened}/{total}), không đọc được số EP nhận.");
                         BeginInvoke(() => _status.Text = $"Đã mở {opened}/{total}...");
                         await Pacing.Wait(0.8, 1.6, pace, ct);
                         continue;
@@ -185,6 +188,17 @@ public sealed class ItemsTab : UserControl
             }
         }
         catch (OperationCanceledException) { stop = "Bạn đã dừng."; }
-        return (stop.Length > 0 ? stop + " " : "Xong. ") + $"Đã mở {opened} {(isPack ? "gói thẻ" : "Thẻ EP may mắn")}.";
+        return (stop.Length > 0 ? stop + " " : "Xong. ") + $"Đã mở {opened} {(isPack ? "gói thẻ" : "Thẻ EP may mắn")}." + (gotEp > 0 ? $" Nhận tổng {gotEp:N0} EP." : "");
+    }
+
+    /// <summary>The EP a lucky EP card gave: the top-level "ep" number of the response (0 when it is not there).</summary>
+    private static long RewardEp(string raw)
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(raw);
+            return doc.RootElement.TryGetProperty("ep", out var e) && e.TryGetInt64(out var v) ? v : 0;
+        }
+        catch { return 0; }
     }
 }
