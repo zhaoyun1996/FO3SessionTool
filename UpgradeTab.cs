@@ -206,9 +206,9 @@ public sealed class UpgradeTab : UserControl
         _tip.SetToolTip(_btnScan, "Xếp hạng các cầu thủ của một mùa theo giá trị đổi / vốn mua cho xoay vòng (chỉ đọc giá chợ).");
         t.Controls.Add(Lbl("Kết quả"), 0, 1);
         t.Controls.Add(_results, 1, 1);
-        t.SetColumnSpan(_results, 4);
+        t.SetColumnSpan(_results, 3);
         t.Controls.Add(_card, 0, 2);
-        t.SetColumnSpan(_card, 5);
+        t.SetColumnSpan(_card, 4);
         box.Controls.Add(t);
         return box;
     }
