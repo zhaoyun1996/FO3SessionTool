@@ -82,7 +82,7 @@ public sealed class UpgradeTab : UserControl
         string outText = keep ? "KHÔNG làm gì (giữ thẻ trong kho)"
             : sell ? "bán thị trường ở giá gợi ý, " + (_collectAuto.Checked ? "tự nhận tiền" : "không tự nhận tiền")
             : $"giao dịch khi tổng thẻ đạt từ {_tradeMin.Value:N0} EP" + (_preferSeasons.Count > 0 ? ", ưu tiên các mùa đã chọn" : "");
-        using var dlg = new AutoPickDialog(outText, PaceFactor[_pace.SelectedIndex < 0 ? 1 : _pace.SelectedIndex], Rules, output);
+        using var dlg = new AutoPickDialog(outText, PaceFactor[_pace.SelectedIndex < 0 ? 1 : _pace.SelectedIndex], Rules, output, ApiProvider?.Invoke());
         if (dlg.ShowDialog(FindForm()) != DialogResult.OK) return;
         AutoRequested?.Invoke(dlg.Result);
     }

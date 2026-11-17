@@ -17,6 +17,49 @@ public sealed class AutoPickDialog : Form
     private readonly IReadOnlyDictionary<int, (int A, int B)> _rules;
 
     private readonly CycleOptions _out;
+    private readonly GameApi? _api;
+    private readonly DarkButton _suggest = new() { Text = "Gợi ý từ thị trường", Width = 170 };
+    private readonly Label _suggestInfo = new() { AutoSize = false, Dock = DockStyle.Fill, ForeColor = Theme.Dim };
+    private CancellationTokenSource? _scanCts;
+
+    /// <summary>Scans the real market with permissive thresholds and fills the fields with values that fit what it found: the lowest profit / % the best few ideas still reach, how many of them fit the budget, which seasons they come from.</summary>
+    private async Task SuggestAsync()
+    {
+        if (_api == null) { MessageBox.Show("Hãy đăng nhập trước.", Text, MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
+        _suggest.Enabled = false; _ok.Enabled = false;
+        _scanCts = new CancellationTokenSource();
+        try
+        {
+            var probe = Result with { MinPct = 0, MinProfit = 0, Seasons = Result.Seasons };
+            var list = await AutoPicker.ScanAsync(_api, probe, t => { try { _suggestInfo.Text = t; } catch { } }, _scanCts.Token);
+            long budget = (_api.LastWallet?.Ep ?? 0) - _out.StopBelowEp;
+            var ok = list.Where(c => c.Profit > 0 && c.Cost <= budget).ToList();
+            if (ok.Count == 0) { _suggestInfo.Text = "Thị trường hiện không có phương án nào có lãi (sau thuế, phí) trong vốn hiện có. Giữ nguyên thông số."; return; }
+            var byProfit = ok.OrderByDescending(c => c.Profit).ToList();
+            var top = byProfit.Take(8).ToList();
+            // the thresholds sit at the 5th best idea so that about 5 ideas always qualify
+            var ref5 = byProfit[Math.Min(4, byProfit.Count - 1)];
+            long minProfit = Math.Max(5_000_000L, ref5.Profit / 5_000_000L * 5_000_000L);
+            double minPct = Math.Max(0.02, Math.Floor(Math.Min(ok.OrderByDescending(c => c.Pct).Take(5).Min(c => c.Pct), ref5.Pct) * 100) / 100);
+            var qualified = byProfit.Where(c => c.Profit >= minProfit && c.Pct >= minPct).ToList();
+            int par = 1; long spent = 0;
+            foreach (var c in qualified) { if (par > 5 || spent + c.Cost > budget * 6 / 10) break; spent += c.Cost; par++; }
+            par = Math.Clamp(Math.Max(1, par - 1), 1, 5);
+            var seasons = top.Select(c => (int)(c.Spid / 1_000_000)).Distinct().OrderBy(x => x).ToList();
+            _minProfit.Value = Math.Min(_minProfit.Maximum, minProfit / 1_000_000m);
+            _minPct.Value = Math.Min(_minPct.Maximum, (decimal)Math.Round(minPct * 100));
+            _parallel.Value = par;
+            _rankProfit.Checked = true;
+            _seasonsBox.Text = string.Join(", ", seasons);
+            var names = new List<string>();
+            foreach (var c in top.Take(5)) names.Add($"  {await PlayerNames.DescribeAsync(c.Spid)} +{c.Target}: vốn {c.Cost:N0}, lãi ≈{c.Profit:N0} ({c.Pct:P1})");
+            var lines = string.Join("\n", names);
+            _suggestInfo.Text = $"Đã điền theo {list.Count} phương án quét được ({ok.Count} có lãi, vốn dùng được {budget:N0} EP). Lãi tối thiểu {minProfit / 1_000_000:N0} triệu, {minPct:P0}, chạy song song {par}, mùa {string.Join(", ", seasons)}.\nTốt nhất:\n{lines}";
+        }
+        catch (OperationCanceledException) { _suggestInfo.Text = "Đã hủy quét."; }
+        catch (Exception ex) { _suggestInfo.Text = "Lỗi khi quét: " + ex.Message; }
+        finally { _suggest.Enabled = true; _ok.Enabled = true; }
+    }
 
     private static string SettingsFile => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "FO3SessionTool", "auto-settings.json");
 
@@ -58,12 +101,12 @@ public sealed class AutoPickDialog : Form
         }
     }
 
-    public AutoPickDialog(string outputText, double pace, IReadOnlyDictionary<int, (int A, int B)> rules, CycleOptions output)
+    public AutoPickDialog(string outputText, double pace, IReadOnlyDictionary<int, (int A, int B)> rules, CycleOptions output, GameApi? api = null)
     {
-        _pace = pace; _rules = rules; _out = output;
+        _api = api; _pace = pace; _rules = rules; _out = output;
         Text = "Tự quét cầu thủ lãi nhất rồi ép lên +6";
         FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = false; MinimizeBox = false; ShowInTaskbar = false;
-        StartPosition = FormStartPosition.CenterParent; Font = Theme.Body; ClientSize = new Size(660, 560);
+        StartPosition = FormStartPosition.CenterParent; Font = Theme.Body; ClientSize = new Size(660, 760);
         try { Icon = Icon.ExtractAssociatedIcon(Environment.ProcessPath!); } catch { }
 
         var info = new Label
@@ -93,8 +136,11 @@ public sealed class AutoPickDialog : Form
         t.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
 
         var bottom = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 54, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(12, 8, 12, 0) };
-        bottom.Controls.Add(_cancel); bottom.Controls.Add(_ok);
-        Controls.Add(t); Controls.Add(bottom); Controls.Add(info);
+        bottom.Controls.Add(_cancel); bottom.Controls.Add(_ok); bottom.Controls.Add(_suggest);
+        _suggest.Click += async (_, _) => await SuggestAsync();
+        FormClosing += (_, _) => { try { _scanCts?.Cancel(); } catch { } };
+        _suggestInfo.Height = 150; _suggestInfo.Dock = DockStyle.Bottom;
+        Controls.Add(t); Controls.Add(_suggestInfo); Controls.Add(bottom); Controls.Add(info);
         AcceptButton = _ok; CancelButton = _cancel;
         LoadSaved();
         Theme.Apply(this);
