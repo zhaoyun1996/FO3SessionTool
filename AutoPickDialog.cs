@@ -18,6 +18,35 @@ public sealed class AutoPickDialog : Form
 
     private readonly CycleOptions _out;
 
+    private static string SettingsFile => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "FO3SessionTool", "auto-settings.json");
+
+    /// <summary>Remembers the last values of this dialog so the next opening starts from them.</summary>
+    private sealed record Saved(decimal MinPct, decimal Interval, decimal Pool, decimal Loss, decimal Parallel, decimal MinProfit, bool RankProfit, string Seasons);
+
+    private void LoadSaved()
+    {
+        try
+        {
+            var v = System.Text.Json.JsonSerializer.Deserialize<Saved>(File.ReadAllText(SettingsFile));
+            if (v == null) return;
+            static decimal Clamp(DarkNumber n, decimal x) => Math.Min(n.Maximum, Math.Max(n.Minimum, x));
+            _minPct.Value = Clamp(_minPct, v.MinPct); _interval.Value = Clamp(_interval, v.Interval); _pool.Value = Clamp(_pool, v.Pool);
+            _loss.Value = Clamp(_loss, v.Loss); _parallel.Value = Clamp(_parallel, v.Parallel); _minProfit.Value = Clamp(_minProfit, v.MinProfit);
+            _rankProfit.Checked = v.RankProfit; _seasonsBox.Text = v.Seasons ?? "";
+        }
+        catch { }
+    }
+
+    private void SaveSaved()
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(SettingsFile)!);
+            File.WriteAllText(SettingsFile, System.Text.Json.JsonSerializer.Serialize(new Saved(_minPct.Value, _interval.Value, _pool.Value, _loss.Value, _parallel.Value, _minProfit.Value, _rankProfit.Checked, _seasonsBox.Text)));
+        }
+        catch { }
+    }
+
     public AutoSettings Result
     {
         get
@@ -67,9 +96,8 @@ public sealed class AutoPickDialog : Form
         bottom.Controls.Add(_cancel); bottom.Controls.Add(_ok);
         Controls.Add(t); Controls.Add(bottom); Controls.Add(info);
         AcceptButton = _ok; CancelButton = _cancel;
+        LoadSaved();
         Theme.Apply(this);
-        _ok.Click += (_, _) =>
-        {
-        };
+        _ok.Click += (_, _) => SaveSaved();
     }
 }
