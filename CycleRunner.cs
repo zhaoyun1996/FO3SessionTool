@@ -137,7 +137,7 @@ public sealed class CycleRunner
                 _log($"[Xoay vòng] Bắt đầu song song Mua / Ép (không giao dịch, không bán: thẻ +{plan.Target} ép xong được giữ lại). EP {Ep():N0}. Thẻ +{plan.Target} đã có: {_kept}. Kho {_cardCount}/{opt.StorageSlots}.");
             else if (opt.SellMode)
                 _log($"[Xoay vòng] Bắt đầu song song Mua / Ép / Bán. EP {Ep():N0}. Thẻ có sẵn: {(have.Any() ? string.Join(", ", have) : "không")}. Kho {_cardCount}/{opt.StorageSlots}. " +
-                     $"Thẻ +{plan.Target} ép xong sẽ đăng bán ngay ở giá cao nhất game cho phép; {(opt.AutoCollect ? "tự động nhận tiền khi bán xong" : "KHÔNG tự nhận tiền (nhận trong game)")}; đang có {_pending} lệnh bán chờ.");
+                     $"Thẻ +{plan.Target} ép xong sẽ đăng bán ngay ở giá gợi ý của game (hệ thống thu mua trong 1-15 phút); {(opt.AutoCollect ? "tự động nhận tiền khi bán xong" : "KHÔNG tự nhận tiền (nhận trong game)")}; đang có {_pending} lệnh bán chờ.");
             else
                 _log($"[Xoay vòng] Bắt đầu song song Mua / Ép / Giao dịch. EP {Ep():N0}. Thẻ có sẵn: {(have.Any() ? string.Join(", ", have) : "không")}. Kho {_cardCount}/{opt.StorageSlots}. " +
                      $"Đổi khi tổng thẻ +{plan.Target} đạt {opt.TradeMin:N0}–{opt.TradeMax:N0} EP; dừng sau {opt.MaxLossRounds} lần giao dịch lỗ liên tiếp.");
@@ -545,7 +545,11 @@ public sealed class CycleRunner
     }
 
     // ================= seller (sell mode) =================
-    /// <summary>Takes one target-level card and lists it at the highest price the game allows. The listing fee is paid now, the game's cut when it sells.</summary>
+    /// <summary>What the game keeps of a sale (the rules of 2026-11): 30% tax up to 500,000 EP and 40% above, 70% of it refunded for every 3Sea manager, so 9% / 12%.</summary>
+    internal static long SaleTax(long price) => price <= 0 ? 0 : (long)Math.Round(0.09 * Math.Min(price, 500_000) + 0.12 * Math.Max(0, price - 500_000));
+
+    /// <summary>Takes one target-level card and lists it at the price the game suggests on the sale screen: the system buys listings at or below that price
+    /// within 1-15 minutes (a higher price would wait for another manager). The listing fee is paid now, the sale tax when it sells.</summary>
     private async Task SellOnce(UpgradePlan plan, CycleOptions opt, double pace, CancellationToken tok)
     {
         string? id;
@@ -572,9 +576,11 @@ public sealed class CycleRunner
             tok.ThrowIfCancellationRequested();   // last chance to stop: nothing is listed yet
 
             long cost; lock (_lock) cost = _cardCost.GetValueOrDefault(id);   // what went into this very card
-            _log($"[Xoay vòng/Bán] Đăng bán thẻ +{plan.Target} (…{Tail(id)}) giá cao nhất {price.Upper:N0} EP (khung {price.Lower:N0}–{price.Upper:N0}), phí đăng {price.Fee:N0}...");
+            long ask = price.Default > 0 ? price.Default : price.Lower;   // the suggested price: the system buys at or below it
+            if (ask <= 0) { _step(CycleRunner.TradeStep, StepState.Error); Stop("Game không đưa ra giá gợi ý cho thẻ này (/transfer/price)."); return; }
+            _log($"[Xoay vòng/Bán] Đăng bán thẻ +{plan.Target} (…{Tail(id)}) ở giá gợi ý {ask:N0} EP (hệ thống thu mua trong 1-15 phút; khung {price.Lower:N0}–{price.Upper:N0}), phí đăng {price.Fee:N0}...");
             // committed: a stop request does not interrupt it from here
-            var res = await _api.SellAsync(id, price.Upper, CancellationToken.None);
+            var res = await _api.SellAsync(id, ask, CancellationToken.None);
             if (!res.Ok)
             {
                 _step(CycleRunner.TradeStep, StepState.Error);
@@ -585,13 +591,13 @@ public sealed class CycleRunner
             }
             listed = true; _sellFailures = 0;
             if (GameApi.ParseWallet(res.Raw) == null) _api.Spend(price.Fee);
-            long cut = res.Offer?.CompleteFee > 0 ? res.Offer.CompleteFee : price.Upper / 5;
-            long expectedIn = price.Upper - cut;
+            long cut = res.Offer?.CompleteFee > 0 ? res.Offer.CompleteFee : SaleTax(ask);
+            long expectedIn = ask - cut;
             RoundStat st;
             lock (_lock)
             {
                 _offered.Add(id);
-                st = new RoundStat(_round1, _roundBought, _roundMerged, 1, price.Upper, cost + price.Fee, expectedIn, 0);
+                st = new RoundStat(_round1, _roundBought, _roundMerged, 1, ask, cost + price.Fee, expectedIn, 0);
                 _totalNet += st.Net;
                 _lossStreak = st.Net < 0 ? _lossStreak + 1 : 0;
                 _sold++; _pending++; _round1++; _roundBought = _roundMerged = 0;
@@ -600,7 +606,7 @@ public sealed class CycleRunner
             _step(CycleRunner.TradeStep, StepState.Done);
             Activity();
             _round?.Invoke(st);
-            _log($"[Xoay vòng] ĐÃ ĐĂNG BÁN thẻ {_sold}: giá {price.Upper:N0}, game giữ {cut:N0} khi bán xong → nhận ≈{expectedIn:N0}; chi phí của thẻ này (mua+ép) {cost:N0} + phí đăng {price.Fee:N0}, " +
+            _log($"[Xoay vòng] ĐÃ ĐĂNG BÁN thẻ {_sold}: giá {ask:N0}, game giữ {cut:N0} thuế khi bán xong → nhận ≈{expectedIn:N0}; chi phí của thẻ này (mua+ép) {cost:N0} + phí đăng {price.Fee:N0}, " +
                  (st.Net >= 0 ? "LÃI " : "LỖ ") + $"≈{Math.Abs(st.Net):N0} EP (ước tính). Tổng ước tính {Signed(_totalNet)} EP.");
             if (_lossStreak >= opt.MaxLossRounds) Stop($"Đã lỗ {_lossStreak} lần bán liên tiếp, dừng theo cài đặt.");
         }

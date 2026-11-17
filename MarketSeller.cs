@@ -18,7 +18,9 @@ public static class MarketSeller
         step(stepIndex, StepState.Running);
         var price = await api.GetSellPriceAsync(plan.Spid, plan.Target, ct);
         if (price == null) { step(stepIndex, StepState.Error); return new Result(0, 0, 0, "Không đọc được khung giá bán (/transfer/price)."); }
-        log($"[Bán] Đăng bán {cardIds.Count} thẻ +{plan.Target} ở giá cao nhất {price.Upper:N0} EP (khung {price.Lower:N0}–{price.Upper:N0}), phí đăng {price.Fee:N0}/thẻ.");
+        long ask = price.Default > 0 ? price.Default : price.Lower;   // the suggested price: the system buys at or below it
+        if (ask <= 0) { step(stepIndex, StepState.Error); return new Result(0, 0, 0, "Game không đưa ra giá gợi ý cho thẻ này (/transfer/price)."); }
+        log($"[Bán] Đăng bán {cardIds.Count} thẻ +{plan.Target} ở giá gợi ý {ask:N0} EP (hệ thống thu mua trong 1-15 phút; khung {price.Lower:N0}–{ask:N0}), phí đăng {price.Fee:N0}/thẻ.");
 
         int listed = 0, failures = 0; long fees = 0;
         foreach (var id in cardIds)
@@ -27,30 +29,30 @@ public static class MarketSeller
             if ((api.LastWallet?.Ep ?? 0) < price.Fee)
             {
                 step(stepIndex, StepState.Error);
-                return new Result(listed, listed * price.Upper, fees, $"Không đủ EP để trả phí đăng bán ({price.Fee:N0}, còn {api.LastWallet?.Ep ?? 0:N0}).");
+                return new Result(listed, listed * ask, fees, $"Không đủ EP để trả phí đăng bán ({price.Fee:N0}, còn {api.LastWallet?.Ep ?? 0:N0}).");
             }
             await Pacing.Wait(1.5, 3, plan.Pace, ct);
             ct.ThrowIfCancellationRequested();
-            var res = await api.SellAsync(id, price.Upper, CancellationToken.None);   // committed
+            var res = await api.SellAsync(id, ask, CancellationToken.None);   // committed
             if (!res.Ok)
             {
                 log($"[Bán] Đăng bán thẻ …{(id.Length > 6 ? id[^6..] : id)} thất bại: {GameApi.Trim(res.Raw)}");
-                if (++failures >= 3) { step(stepIndex, StepState.Error); return new Result(listed, listed * price.Upper, fees, "Đăng bán thất bại 3 lần liên tiếp: " + GameApi.Trim(res.Raw)); }
+                if (++failures >= 3) { step(stepIndex, StepState.Error); return new Result(listed, listed * ask, fees, "Đăng bán thất bại 3 lần liên tiếp: " + GameApi.Trim(res.Raw)); }
                 continue;
             }
             failures = 0; listed++; fees += price.Fee;
             if (GameApi.ParseWallet(res.Raw) == null) api.Spend(price.Fee);
-            log($"[Bán] Đã đăng bán {listed}/{cardIds.Count}: giá {price.Upper:N0}, game giữ {(res.Offer?.CompleteFee > 0 ? res.Offer.CompleteFee : price.Upper / 5):N0} khi bán xong.");
+            log($"[Bán] Đã đăng bán {listed}/{cardIds.Count}: giá {ask:N0}, game giữ {(res.Offer?.CompleteFee > 0 ? res.Offer.CompleteFee : CycleRunner.SaleTax(ask)):N0} khi bán xong.");
         }
         step(stepIndex, StepState.Done);
-        if (!plan.CollectAfter || listed == 0) return new Result(listed, listed * price.Upper, fees, null);
+        if (!plan.CollectAfter || listed == 0) return new Result(listed, listed * ask, fees, null);
 
         // wait (a few minutes at most) for the buyers and collect the money of the cards listed just now
-        log("[Bán] Chờ người mua và tự nhận tiền (tối đa 3 phút)...");
+        log("[Bán] Chờ người mua và tự nhận tiền (hệ thống thu mua sau 1-15 phút, chờ tối đa 17 phút)...");
         var mine = new HashSet<string>(cardIds);
         int collected = 0; long got = 0;
         var seen = new HashSet<string>();
-        var until = DateTime.UtcNow.AddMinutes(3);
+        var until = DateTime.UtcNow.AddMinutes(17);
         try
         {
             while (collected < listed && DateTime.UtcNow < until)
@@ -72,6 +74,6 @@ public static class MarketSeller
             }
         }
         catch (OperationCanceledException) { log("[Bán] Đã dừng chờ nhận tiền."); }
-        return new Result(listed, listed * price.Upper, fees, null, collected, got);
+        return new Result(listed, listed * ask, fees, null, collected, got);
     }
 }

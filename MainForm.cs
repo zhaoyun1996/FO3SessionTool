@@ -720,7 +720,7 @@ public sealed class MainForm : Form
         Log(opt.KeepMode
             ? $"[Xoay vòng] Bắt đầu: {pname}, mua và ép đến +{plan.Target}, giữ thẻ (không giao dịch, không bán)."
             : opt.SellMode
-            ? $"[Xoay vòng] Bắt đầu song song: {pname}, ép đến +{plan.Target}, bán thị trường giá cao nhất, nhận tiền {(opt.AutoCollect ? "tự động" : "thủ công")}."
+            ? $"[Xoay vòng] Bắt đầu song song: {pname}, ép đến +{plan.Target}, bán thị trường ở giá gợi ý (hệ thống thu mua), nhận tiền {(opt.AutoCollect ? "tự động" : "thủ công")}."
             : $"[Xoay vòng] Bắt đầu song song: {pname}, ép đến +{plan.Target}, đổi khi đạt {opt.TradeMin:N0}-{opt.TradeMax:N0} EP.");
         try
         {

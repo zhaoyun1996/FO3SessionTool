@@ -258,7 +258,7 @@ public sealed class UpgradeTab : UserControl
         t.Controls.Add(_stopBelowLabel, 0, 9);
         _stopBelow.Margin = new Padding(3, 0, 3, 0);
         t.Controls.Add(_stopBelow, 1, 9);
-        _tip.SetToolTip(_outMode, "Bán thị trường: thẻ vừa ép lên đúng mức đích được đăng bán ngay trên thị trường chuyển nhượng ở giá CAO NHẤT game cho phép (không giao dịch). Phí đăng 1% khi đăng, game giữ 20% khi bán xong.");
+        _tip.SetToolTip(_outMode, "Bán thị trường: thẻ vừa ép lên đúng mức đích được đăng bán ở GIÁ GỢI Ý của game (không giao dịch). Hệ thống tự thu mua thẻ đăng ở giá gợi ý trở xuống sau 1-15 phút. Phí đăng 500 EP, thuế bán khoảng 9-12% giá.");
         _tip.SetToolTip(_collectManual, "Tool không nhận tiền: bạn tự nhận trong game (mục lệnh bán). Tiền chưa nhận thì chưa dùng được để mua tiếp.");
         _tip.SetToolTip(_collectAuto, "Thẻ bán xong thì tool tự bấm nhận tiền (chỉ lệnh bán của cầu thủ đang chọn). Xoay vòng: khi còn lệnh chờ người mua, tool không dừng dù EP đã hết. Một lần: đăng bán xong tool chờ tối đa 3 phút để nhận tiền.");
         _tip.SetToolTip(_stopBelow, "Không mua thêm nếu số EP còn lại sau khi mua sẽ dưới mức này; khi không còn gì ép/đổi được thì dừng. 0 = không đặt mức.");
