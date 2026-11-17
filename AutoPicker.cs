@@ -1,15 +1,19 @@
 namespace FO3SessionTool;
 
 /// <summary>One idea for the auto mode: build this player up to +Target from cheap +1 cards and sell it to the system at the suggested price.</summary>
-public sealed record AutoCandidate(long Spid, int Overall, int Target, int Cards, long Cost, long Ask, long TakeHome, long Fees)
+public sealed record AutoCandidate(long Spid, int Overall, int Target, int Cards, long Cost, long Ask, long TakeHome, long Fees, string Basis)
 {
     public long Profit => TakeHome - Cost - Fees;
     public double Pct => Cost > 0 ? (double)Profit / Cost : 0;
 }
 
-/// <summary>Settings of the auto mode (scan, pick the most profitable player at +6 / +7, run a window, scan again).</summary>
-public sealed record AutoSettings(bool Use6, bool Use7, double MinPct, int IntervalMinutes, int PoolSize, IReadOnlySet<int>? Seasons, double Pace, long StopBelowEp,
-    IReadOnlyDictionary<int, (int A, int B)> Rules, int MaxLossRounds);
+/// <summary>Settings of the auto mode (scan, pick the most profitable player at +6 / +7, buy and merge for one window, scan again).
+/// What happens to a card once merged (sell / trade / keep, collecting the money) is the tab's own output choice, carried in Out.</summary>
+public sealed record AutoSettings(bool Use6, bool Use7, double MinPct, int IntervalMinutes, int PoolSize, IReadOnlySet<int>? Seasons, double Pace,
+    IReadOnlyDictionary<int, (int A, int B)> Rules, int MaxLossRounds, CycleOptions Out)
+{
+    public long StopBelowEp => Out.StopBelowEp;
+}
 
 public static class AutoPicker
 {
@@ -50,9 +54,22 @@ public static class AutoPicker
                 try { p = await api.GetSellPriceAsync(r.Spid, t, ct); } catch (OperationCanceledException) { throw; } catch { }
                 if (p == null) continue;
                 long ask = p.Default > 0 ? p.Default : p.Lower;
-                if (ask <= 0 || ask > CycleRunner.SystemBuyMax) continue;
+                if (ask <= 0) continue;
                 long cost = ask1.Take(need).Sum();
-                found.Add(new AutoCandidate(r.Spid, r.Overall, t, need, cost, ask, ask - CycleRunner.SaleTax(ask) - p.Fee, MergeFees(t) + p.Fee));
+                if (s.Out.SellMode || s.Out.KeepMode)
+                {
+                    // sold to the system at the suggested price (a kept card is ranked the same way: what it would fetch)
+                    if (ask > CycleRunner.SystemBuyMax) continue;
+                    found.Add(new AutoCandidate(r.Spid, r.Overall, t, need, cost, ask, ask - CycleRunner.SaleTax(ask) - p.Fee, MergeFees(t) + p.Fee,
+                        s.Out.KeepMode ? "giữ thẻ, xếp hạng theo giá bán gợi ý" : "bán ở giá gợi ý"));
+                }
+                else
+                {
+                    // traded: the game values a card at 1.25 x its floor price and the offers paid back about that much (0.95 allows for selling the received card); one card per trade at most TradeMax
+                    long value = p.Lower * 5 / 4;
+                    if (value <= 0 || value > s.Out.TradeMax) continue;
+                    found.Add(new AutoCandidate(r.Spid, r.Overall, t, need, cost, value, (long)(value * 0.95), MergeFees(t), "đổi, ước tính 0,95 giá trị đổi"));
+                }
                 await Pacing.Wait(0.05, 0.12, 1.0, ct);
             }
             await Pacing.Wait(0.05, 0.14, 1.0, ct);

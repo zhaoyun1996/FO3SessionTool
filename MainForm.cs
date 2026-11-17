@@ -798,13 +798,14 @@ public sealed class MainForm : Form
         {
             while (!main.IsCancellationRequested)
             {
-                try { await Task.Delay(TimeSpan.FromSeconds(40), main); if (!Volatile.Read(ref runnerActive[0])) await AutoCollectSoldAsync(api, used, main); }
+                try { await Task.Delay(TimeSpan.FromSeconds(40), main); if (s.Out.SellMode && s.Out.AutoCollect && !Volatile.Read(ref runnerActive[0])) await AutoCollectSoldAsync(api, used, main); }
                 catch (OperationCanceledException) { break; }
                 catch (Exception ex) { Log("[Tự quét/Nhận tiền] Lỗi: " + ex.Message); }
             }
         });
         Log($"[Tự quét] Bắt đầu: mức đích {(s.Use6 ? "+6 " : "")}{(s.Use7 ? "+7 " : "")}, lãi tối thiểu {s.MinPct:P0}, chu kỳ {s.IntervalMinutes} phút, quét {s.PoolSize} cầu thủ mạnh nhất" +
-            (s.Seasons is { Count: > 0 } ? $" của {s.Seasons.Count} mùa đã chọn" : "") + ", bán cho hệ thống ở giá gợi ý.");
+            (s.Seasons is { Count: > 0 } ? $" của {s.Seasons.Count} mùa đã chọn" : "") + ". Sau khi ép: " +
+            (s.Out.KeepMode ? "giữ thẻ trong kho." : s.Out.SellMode ? "bán ở giá gợi ý, " + (s.Out.AutoCollect ? "tự nhận tiền." : "không tự nhận tiền.") : $"giao dịch khi tổng thẻ đạt {s.Out.TradeMin:N0}-{s.Out.TradeMax:N0} EP."));
         try
         {
             while (!main.IsCancellationRequested)
@@ -817,7 +818,7 @@ public sealed class MainForm : Form
                 Log($"[Tự quét] Chu kỳ {cycle}: đang quét thị trường...");
                 var list = await AutoPicker.ScanAsync(api, s, t => _upgrade.SetProgress(0, 1, t), main);
                 foreach (var c in list.Take(5))
-                    Log($"[Tự quét] {await PlayerNames.DescribeAsync(c.Spid)} lên +{c.Target}: vốn {c.Cost:N0} ({c.Cards} thẻ +1), bán {c.Ask:N0}, nhận về {c.TakeHome:N0}, lãi ≈{c.Profit:N0} ({c.Pct:P1}).");
+                    Log($"[Tự quét] {await PlayerNames.DescribeAsync(c.Spid)} lên +{c.Target}: vốn {c.Cost:N0} ({c.Cards} thẻ +1), {c.Basis} {c.Ask:N0}, nhận về ≈{c.TakeHome:N0}, lãi ≈{c.Profit:N0} ({c.Pct:P1}).");
                 long ep = api.LastWallet?.Ep ?? 0;
                 var best = list.FirstOrDefault(c => c.Pct >= s.MinPct && c.Cost <= ep - s.StopBelowEp);
                 if (best == null)
@@ -830,9 +831,9 @@ public sealed class MainForm : Form
                 }
 
                 lock (used) used.Add(best.Spid);
-                var plan = new UpgradePlan(best.Spid, $"SPID {best.Spid}", 0, 0, best.Target, s.Rules, false, s.Pace, false, true);
+                var plan = new UpgradePlan(best.Spid, $"SPID {best.Spid}", 0, 0, best.Target, s.Rules, false, s.Pace, false, s.Out.AutoCollect);
                 plan = await WithCeilingAsync(plan);
-                var opt = new CycleOptions(MaxLossRounds: s.MaxLossRounds, StopBelowEp: s.StopBelowEp, SellMode: true, AutoCollect: true);
+                var opt = s.Out with { MaxLossRounds = s.MaxLossRounds };
                 var pname = await PlayerNames.DescribeAsync(best.Spid);
                 Log($"[Tự quét] CHỌN: {pname} lên +{best.Target} (lãi ước tính {best.Pct:P1} trên vốn {best.Cost:N0}). Chạy trong chu kỳ này.");
 

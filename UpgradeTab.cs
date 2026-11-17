@@ -74,9 +74,15 @@ public sealed class UpgradeTab : UserControl
     private void OpenAuto()
     {
         if (ApiProvider?.Invoke() == null) { MessageBox.Show("Hãy đăng nhập trước.", "Tự quét", MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
-        string seasonText = _preferSeasons.Count == 0 ? "tất cả các mùa có trong game (chọn mùa ở mục \"Ưu tiên\" để thu hẹp)"
-            : string.Join(", ", _preferSeasons.OrderBy(x => x).Select(SeasonLabel));
-        using var dlg = new AutoPickDialog(_preferSeasons.Count == 0 ? null : _preferSeasons.ToHashSet(), seasonText, PaceFactor[_pace.SelectedIndex < 0 ? 1 : _pace.SelectedIndex], Rules);
+        // what happens after the merge comes from the tab: the loop list is "Giao dịch / Bán thị trường / Không làm gì", the single-run list "Không làm gì / Bán thị trường"
+        bool loop = _runLoop.Checked && !StockMode;
+        bool sell = OutSell, keep = loop ? OutKeep : _outMode.SelectedIndex == 0;
+        var output = new CycleOptions(TradeMin: (long)_tradeMin.Value, StopBelowEp: (long)_stopBelow.Value, SellMode: sell, AutoCollect: _collectAuto.Checked, KeepMode: keep,
+            PreferSeasons: _preferSeasons.ToHashSet());
+        string outText = keep ? "KHÔNG làm gì (giữ thẻ trong kho)"
+            : sell ? "bán thị trường ở giá gợi ý, " + (_collectAuto.Checked ? "tự nhận tiền" : "không tự nhận tiền")
+            : $"giao dịch khi tổng thẻ đạt từ {_tradeMin.Value:N0} EP" + (_preferSeasons.Count > 0 ? ", ưu tiên các mùa đã chọn" : "");
+        using var dlg = new AutoPickDialog(outText, PaceFactor[_pace.SelectedIndex < 0 ? 1 : _pace.SelectedIndex], Rules, output);
         if (dlg.ShowDialog(FindForm()) != DialogResult.OK) return;
         AutoRequested?.Invoke(dlg.Result);
     }

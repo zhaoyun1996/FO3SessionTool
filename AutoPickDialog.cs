@@ -9,32 +9,39 @@ public sealed class AutoPickDialog : Form
     private readonly DarkNumber _interval = new() { Minimum = 3, Maximum = 240, Value = 10, Width = 90 };
     private readonly DarkNumber _pool = new() { Minimum = 20, Maximum = 3000, Value = 400, Width = 90, Increment = 50 };
     private readonly DarkNumber _loss = new() { Minimum = 1, Maximum = 50, Value = 3, Width = 90 };
-    private readonly DarkNumber _stopBelow = new() { Minimum = 0, Maximum = 1_000_000_000_000M, Value = 0, ThousandsSeparator = true, Increment = 100_000_000, Width = 170 };
+    private readonly DarkTextBox _seasonsBox = new() { Width = 250 };
     private readonly DarkButton _ok = new() { Text = "Bắt đầu", Width = 120, Tag = "primary", DialogResult = DialogResult.OK };
     private readonly DarkButton _cancel = new() { Text = "Hủy", Width = 90, DialogResult = DialogResult.Cancel };
-    private readonly IReadOnlySet<int>? _seasons;
     private readonly double _pace;
     private readonly IReadOnlyDictionary<int, (int A, int B)> _rules;
 
-    public AutoSettings Result => new(_use6.Checked, _use7.Checked, (double)_minPct.Value / 100.0, (int)_interval.Value, (int)_pool.Value, _seasons, _pace,
-        (long)_stopBelow.Value, _rules, (int)_loss.Value);
+    private readonly CycleOptions _out;
 
-    public AutoPickDialog(IReadOnlySet<int>? seasons, string seasonText, double pace, IReadOnlyDictionary<int, (int A, int B)> rules)
+    public AutoSettings Result
     {
-        _seasons = seasons; _pace = pace; _rules = rules;
+        get
+        {
+            var typed = new HashSet<int>();
+            foreach (var part in _seasonsBox.Text.Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries))
+                if (int.TryParse(part, out var n) && n > 0) typed.Add(n);
+            return new(_use6.Checked, _use7.Checked, (double)_minPct.Value / 100.0, (int)_interval.Value, (int)_pool.Value, typed.Count > 0 ? typed : null, _pace, _rules, (int)_loss.Value, _out);
+        }
+    }
+
+    public AutoPickDialog(string outputText, double pace, IReadOnlyDictionary<int, (int A, int B)> rules, CycleOptions output)
+    {
+        _pace = pace; _rules = rules; _out = output;
         Text = "Tự quét cầu thủ lãi nhất rồi ép và bán";
         FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = false; MinimizeBox = false; ShowInTaskbar = false;
-        StartPosition = FormStartPosition.CenterParent; Font = Theme.Body; ClientSize = new Size(640, 480);
+        StartPosition = FormStartPosition.CenterParent; Font = Theme.Body; ClientSize = new Size(660, 470);
         try { Icon = Icon.ExtractAssociatedIcon(Environment.ProcessPath!); } catch { }
 
         var info = new Label
         {
-            Dock = DockStyle.Top, Height = 168, Padding = new Padding(12, 10, 12, 0),
-            Text = "Mỗi chu kỳ: tool quét giá chợ, chọn cầu thủ có lãi cao nhất khi mua thẻ +1 rẻ nhất, ép lên +6 / +7 rồi đăng bán ở giá gợi ý của game " +
-                   "(hệ thống thu mua sau 1-15 phút), chạy hết thời gian chu kỳ, rồi quét lại. Lãi = (giá gợi ý − thuế bán − phí đăng) − vốn mua − phí ép ước tính, chia cho vốn. " +
-                   "Lệnh bán chưa ai mua mà giá cao hơn giá gợi ý hiện tại sẽ được đăng lại ở giá mới. Thẻ ép dở của cầu thủ cũ vẫn nằm trong kho. " +
-                   "Chế độ này tự đặt: mức đích, bán cho hệ thống, nhận tiền tự động. Các ô khác của tab (Nguồn thẻ, Cách chạy, Đầu ra, Nhận tiền, Đổi từ, Dừng khi EP dưới) không dùng; " +
-                   "luật ghép, tốc độ và mùa \"Ưu tiên\" của tab vẫn được dùng.",
+            Dock = DockStyle.Top, Height = 140, Padding = new Padding(12, 10, 12, 0),
+            Text = "Mỗi chu kỳ: tool quét giá chợ, chọn cầu thủ có lãi cao nhất khi mua thẻ +1 rẻ nhất rồi ép lên +6 / +7, chạy hết thời gian chu kỳ, rồi quét lại. " +
+                   "Tự quét chỉ lo đầu vào và ép. Sau khi ép xong làm gì (bán, giao dịch, giữ thẻ, nhận tiền, dừng khi EP dưới) theo đúng các ô ở tab: " + outputText + ". " +
+                   "Luật ghép, tốc độ và mức EP dừng của tab cũng được dùng. Thẻ ép dở của cầu thủ cũ vẫn nằm trong kho.",
         };
         var t = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Padding = new Padding(12, 8, 12, 8) };
         t.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 330)); t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -51,10 +58,8 @@ public sealed class AutoPickDialog : Form
         Add("Quét lại sau mỗi (phút)", _interval);
         Add("Số cầu thủ mạnh nhất để quét", _pool);
         Add("Dừng sau số thẻ lỗ / không đáng bán liên tiếp", _loss);
-        Add("Dừng khi EP còn dưới (0 = tắt)", _stopBelow);
+        Add("Chỉ quét các mùa (số, cách nhau dấu phẩy; trống = tất cả)", _seasonsBox);
         t.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
-        var seasonLbl = new Label { Text = "Mùa quét: " + seasonText, AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Theme.Dim };
-        t.Controls.Add(seasonLbl, 0, row); t.SetColumnSpan(seasonLbl, 2);
 
         var bottom = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 54, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(12, 8, 12, 0) };
         bottom.Controls.Add(_cancel); bottom.Controls.Add(_ok);
