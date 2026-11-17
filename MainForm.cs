@@ -745,17 +745,29 @@ public sealed class MainForm : Form
 
     /// <summary>Between two windows: claims the money of sold cards and re-lists the unsold ones that are priced above the game's current suggested price
     /// (the system only buys at or below it). Only the players this auto run has worked on are touched.</summary>
-    private async Task AutoHousekeepAsync(GameApi api, HashSet<long> used, CancellationToken ct)
+    /// <summary>Claims the money of every sold card of the players this auto run has worked on. Returns how many were claimed.</summary>
+    private async Task<int> AutoCollectSoldAsync(GameApi api, HashSet<long> used, CancellationToken ct)
     {
-        if (used.Count == 0) return;
-        var offers = (await api.GetOffersAsync(ct)).Where(o => used.Contains(o.Spid)).ToList();
-        foreach (var o in offers.Where(o => o.Status == "sold" || o.Status == "completed"))
+        HashSet<long> spids; lock (used) spids = new HashSet<long>(used);
+        if (spids.Count == 0) return 0;
+        int got = 0;
+        var offers = (await api.GetOffersAsync(ct)).Where(o => spids.Contains(o.Spid) && (o.Status == "sold" || o.Status == "completed")).ToList();
+        foreach (var o in offers)
         {
             var r = await api.CollectOfferAsync(o.OfferId, CancellationToken.None);
-            Log(r.Ok ? $"[Tự quét/Nhận tiền] Đã nhận {r.Received:N0} EP (thẻ {await PlayerNames.DescribeAsync(o.Spid, null, o.Grade)} bán {o.Price:N0})."
+            if (r.Ok) got++;
+            Log(r.Ok ? $"[Tự quét/Nhận tiền] Đã nhận {r.Received:N0} EP (thẻ {await PlayerNames.DescribeAsync(o.Spid, null, o.Grade)} bán {o.Price:N0}). EP hiện có {api.LastWallet?.Ep ?? 0:N0}."
                      : $"[Tự quét/Nhận tiền] Không nhận được tiền của thẻ {await PlayerNames.DescribeAsync(o.Spid, null, o.Grade)}: {GameApi.Trim(r.Raw)}");
             await Pacing.Wait(0.5, 1.2, 1.0, ct);
         }
+        return got;
+    }
+
+    private async Task AutoHousekeepAsync(GameApi api, HashSet<long> used, CancellationToken ct)
+    {
+        if (used.Count == 0) return;
+        await AutoCollectSoldAsync(api, used, ct);
+        var offers = (await api.GetOffersAsync(ct)).Where(o => used.Contains(o.Spid)).ToList();
         foreach (var o in offers.Where(o => o.Status == "waiting"))
         {
             var p = await api.GetSellPriceAsync(o.Spid, o.Grade, ct);
@@ -780,6 +792,17 @@ public sealed class MainForm : Form
         _upgrade.SetRunning(true);
         var used = new HashSet<long>();
         int cycle = 0, shortRuns = 0;
+        // background collector: sold cards are claimed within ~40 s all the time (while scanning or waiting); during a run the cycle runner claims them itself
+        var runnerActive = new bool[1];
+        var collector = Task.Run(async () =>
+        {
+            while (!main.IsCancellationRequested)
+            {
+                try { await Task.Delay(TimeSpan.FromSeconds(40), main); if (!Volatile.Read(ref runnerActive[0])) await AutoCollectSoldAsync(api, used, main); }
+                catch (OperationCanceledException) { break; }
+                catch (Exception ex) { Log("[Tự quét/Nhận tiền] Lỗi: " + ex.Message); }
+            }
+        });
         Log($"[Tự quét] Bắt đầu: mức đích {(s.Use6 ? "+6 " : "")}{(s.Use7 ? "+7 " : "")}, lãi tối thiểu {s.MinPct:P0}, chu kỳ {s.IntervalMinutes} phút, quét {s.PoolSize} cầu thủ mạnh nhất" +
             (s.Seasons is { Count: > 0 } ? $" của {s.Seasons.Count} mùa đã chọn" : "") + ", bán cho hệ thống ở giá gợi ý.");
         try
@@ -806,7 +829,7 @@ public sealed class MainForm : Form
                     continue;
                 }
 
-                used.Add(best.Spid);
+                lock (used) used.Add(best.Spid);
                 var plan = new UpgradePlan(best.Spid, $"SPID {best.Spid}", 0, 0, best.Target, s.Rules, false, s.Pace, false, true);
                 plan = await WithCeilingAsync(plan);
                 var opt = new CycleOptions(MaxLossRounds: s.MaxLossRounds, StopBelowEp: s.StopBelowEp, SellMode: true, AutoCollect: true);
@@ -821,7 +844,10 @@ public sealed class MainForm : Form
                 try
                 {
                     var runner = new CycleRunner(api, Log, _upgrade.SetStepState, _upgrade.SetProgress, _upgrade.ResetSteps);
-                    var reason = await runner.RunAsync(plan, opt, win.Token);
+                    Volatile.Write(ref runnerActive[0], true);
+                    string reason;
+                    try { reason = await runner.RunAsync(plan, opt, win.Token); }
+                    finally { Volatile.Write(ref runnerActive[0], false); }
                     Log("[Tự quét] Kết thúc lượt chạy: " + reason);
                     if (!win.IsCancellationRequested) shortRuns++; else shortRuns = 0;
                 }
@@ -835,7 +861,14 @@ public sealed class MainForm : Form
         catch (Exception ex) { Log("[Tự quét] LỖI: " + ex.Message); }
         finally
         {
+            try { await collector; } catch { }
             try { await AutoHousekeepAsync(api, used, CancellationToken.None); } catch (Exception ex) { Log("[Tự quét] Không dọn được lệnh bán lúc dừng: " + ex.Message); }
+            try
+            {
+                int waiting = (await api.GetOffersAsync(CancellationToken.None)).Count(o => used.Contains(o.Spid) && o.Status == "waiting");
+                if (waiting > 0) Log($"[Tự quét] Còn {waiting} lệnh bán chưa có người mua; khi hệ thống thu mua xong hãy nhận tiền trong game (tool đã dừng nên không tự nhận nữa).");
+            }
+            catch { }
             _upCts?.Dispose();
             _upCts = null;
             _upgrade.SetRunning(false);
