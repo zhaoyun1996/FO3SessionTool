@@ -24,15 +24,17 @@ public sealed class AutoPickDialog : Form
         _seasons = seasons; _pace = pace; _rules = rules;
         Text = "Tự quét cầu thủ lãi nhất rồi ép và bán";
         FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = false; MinimizeBox = false; ShowInTaskbar = false;
-        StartPosition = FormStartPosition.CenterParent; Font = Theme.Body; ClientSize = new Size(640, 440);
+        StartPosition = FormStartPosition.CenterParent; Font = Theme.Body; ClientSize = new Size(640, 480);
         try { Icon = Icon.ExtractAssociatedIcon(Environment.ProcessPath!); } catch { }
 
         var info = new Label
         {
-            Dock = DockStyle.Top, Height = 124, Padding = new Padding(12, 10, 12, 0),
+            Dock = DockStyle.Top, Height = 168, Padding = new Padding(12, 10, 12, 0),
             Text = "Mỗi chu kỳ: tool quét giá chợ, chọn cầu thủ có lãi cao nhất khi mua thẻ +1 rẻ nhất, ép lên +6 / +7 rồi đăng bán ở giá gợi ý của game " +
                    "(hệ thống thu mua sau 1-15 phút), chạy hết thời gian chu kỳ, rồi quét lại. Lãi = (giá gợi ý − thuế bán − phí đăng) − vốn mua − phí ép ước tính, chia cho vốn. " +
-                   "Lệnh bán chưa ai mua mà giá cao hơn giá gợi ý hiện tại sẽ được đăng lại ở giá mới. Thẻ ép dở của cầu thủ cũ vẫn nằm trong kho.",
+                   "Lệnh bán chưa ai mua mà giá cao hơn giá gợi ý hiện tại sẽ được đăng lại ở giá mới. Thẻ ép dở của cầu thủ cũ vẫn nằm trong kho. " +
+                   "Chế độ này tự đặt: mức đích, bán cho hệ thống, nhận tiền tự động. Các ô khác của tab (Nguồn thẻ, Cách chạy, Đầu ra, Nhận tiền, Đổi từ, Dừng khi EP dưới) không dùng; " +
+                   "luật ghép, tốc độ và mùa \"Ưu tiên\" của tab vẫn được dùng.",
         };
         var t = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Padding = new Padding(12, 8, 12, 8) };
         t.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 330)); t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));

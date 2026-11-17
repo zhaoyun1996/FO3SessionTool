@@ -27,6 +27,10 @@ public static class AutoPicker
             .Where(r => roster == null || roster.Contains((int)(r.Spid / 1_000_000)))
             .Where(r => s.Seasons == null || s.Seasons.Count == 0 || s.Seasons.Contains((int)(r.Spid / 1_000_000)))
             .OrderByDescending(r => r.Overall).Take(Math.Max(20, s.PoolSize)).ToList();
+        // +1 cards one card of each level takes under the merge rules of the tab (the default "two cards of the level below" gives 2^(level-1))
+        var needAt = new Dictionary<int, int> { [1] = 1 };
+        for (int l = 2; l <= 7; l++)
+            needAt[l] = s.Rules.TryGetValue(l, out var ab) && needAt.TryGetValue(ab.A, out var na) && needAt.TryGetValue(ab.B, out var nb) ? na + nb : 1 << (l - 1);
         var found = new List<AutoCandidate>();
         int done = 0;
         foreach (var r in pool)
@@ -40,7 +44,7 @@ public static class AutoPicker
                 for (int i = 0; i < l.Count && ask1.Count < 200; i++) ask1.Add(l.Price);
             foreach (int t in targets)
             {
-                int need = 1 << (t - 1);
+                int need = needAt[t];
                 if (ask1.Count < need) continue;
                 GameApi.SellPrice? p = null;
                 try { p = await api.GetSellPriceAsync(r.Spid, t, ct); } catch (OperationCanceledException) { throw; } catch { }
