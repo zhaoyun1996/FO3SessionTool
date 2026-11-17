@@ -111,6 +111,7 @@ public sealed class MainForm : Form
         _upgrade.ApiProvider = () => _api;
         _upgrade.RunRequested += OnUpgradeRun;
         _upgrade.CycleRequested += OnCycleRun;
+        _upgrade.AutoRequested += OnAutoRun;
         _upgrade.StopRequested += () => { _upCts?.Cancel(); Log("[Ép thẻ] Đang dừng..."); };
         _tabUpgrade = new TabPage("Ép thẻ tự động") { Padding = new Padding(0, Theme.Gap, 0, 0) };
         _tabUpgrade.Controls.Add(_upgrade);
@@ -737,6 +738,109 @@ public sealed class MainForm : Form
             _upCts = null;
             _upgrade.SetRunning(false);
             if (_api != null) _ = RefreshWalletAsync(_api);
+        }
+    }
+
+    // ---- auto mode: scan -> best player at +6 / +7 -> run one window -> scan again ----
+
+    /// <summary>Between two windows: claims the money of sold cards and re-lists the unsold ones that are priced above the game's current suggested price
+    /// (the system only buys at or below it). Only the players this auto run has worked on are touched.</summary>
+    private async Task AutoHousekeepAsync(GameApi api, HashSet<long> used, CancellationToken ct)
+    {
+        if (used.Count == 0) return;
+        var offers = (await api.GetOffersAsync(ct)).Where(o => used.Contains(o.Spid)).ToList();
+        foreach (var o in offers.Where(o => o.Status == "sold" || o.Status == "completed"))
+        {
+            var r = await api.CollectOfferAsync(o.OfferId, CancellationToken.None);
+            Log(r.Ok ? $"[Tự quét/Nhận tiền] Đã nhận {r.Received:N0} EP (thẻ {await PlayerNames.DescribeAsync(o.Spid, null, o.Grade)} bán {o.Price:N0})."
+                     : $"[Tự quét/Nhận tiền] Không nhận được tiền của thẻ {await PlayerNames.DescribeAsync(o.Spid, null, o.Grade)}: {GameApi.Trim(r.Raw)}");
+            await Pacing.Wait(0.5, 1.2, 1.0, ct);
+        }
+        foreach (var o in offers.Where(o => o.Status == "waiting"))
+        {
+            var p = await api.GetSellPriceAsync(o.Spid, o.Grade, ct);
+            long ask = p == null ? 0 : p.Default > 0 ? p.Default : p.Lower;
+            if (ask <= 0 || o.Price <= ask) continue;   // already at or below the suggested price: the system will take it
+            var r = await api.RelistAsync(o.OfferId, ask, CancellationToken.None);
+            Log(r.Ok ? $"[Tự quét/Đăng lại] {await PlayerNames.DescribeAsync(o.Spid, null, o.Grade)}: giá cũ {o.Price:N0} cao hơn giá gợi ý, đăng lại ở {ask:N0} (phí đăng 500 EP)."
+                     : $"[Tự quét/Đăng lại] Đăng lại thất bại: {GameApi.Trim(r.Raw)}");
+            await Pacing.Wait(0.8, 1.6, 1.0, ct);
+        }
+    }
+
+    private async void OnAutoRun(AutoSettings s)
+    {
+        if (_api == null) { Warn("Hãy đăng nhập trước."); return; }
+        if (_upCts != null) return;
+        if (_buy.Running || _league.Running || _items.Running) { Warn("Đang mua tự động hoặc giả lập mùa giải, hãy dừng trước."); return; }
+        var api = _api;
+        _upCts = new CancellationTokenSource();
+        var main = _upCts.Token;
+        _upgrade.ResetSteps();
+        _upgrade.SetRunning(true);
+        var used = new HashSet<long>();
+        int cycle = 0, shortRuns = 0;
+        Log($"[Tự quét] Bắt đầu: mức đích {(s.Use6 ? "+6 " : "")}{(s.Use7 ? "+7 " : "")}, lãi tối thiểu {s.MinPct:P0}, chu kỳ {s.IntervalMinutes} phút, quét {s.PoolSize} cầu thủ mạnh nhất" +
+            (s.Seasons is { Count: > 0 } ? $" của {s.Seasons.Count} mùa đã chọn" : "") + ", bán cho hệ thống ở giá gợi ý.");
+        try
+        {
+            while (!main.IsCancellationRequested)
+            {
+                cycle++;
+                var started = DateTime.UtcNow;
+                var interval = TimeSpan.FromMinutes(s.IntervalMinutes);
+                await AutoHousekeepAsync(api, used, main);
+
+                Log($"[Tự quét] Chu kỳ {cycle}: đang quét thị trường...");
+                var list = await AutoPicker.ScanAsync(api, s, t => _upgrade.SetProgress(0, 1, t), main);
+                foreach (var c in list.Take(5))
+                    Log($"[Tự quét] {await PlayerNames.DescribeAsync(c.Spid)} lên +{c.Target}: vốn {c.Cost:N0} ({c.Cards} thẻ +1), bán {c.Ask:N0}, nhận về {c.TakeHome:N0}, lãi ≈{c.Profit:N0} ({c.Pct:P1}).");
+                long ep = api.LastWallet?.Ep ?? 0;
+                var best = list.FirstOrDefault(c => c.Pct >= s.MinPct && c.Cost <= ep - s.StopBelowEp);
+                if (best == null)
+                {
+                    Log($"[Tự quét] Không có phương án nào lãi từ {s.MinPct:P0} (hoặc đủ EP). Chờ chu kỳ sau.");
+                    _upgrade.SetProgress(0, 1, "Không có phương án đủ lãi, chờ quét lại...");
+                    var wait = interval - (DateTime.UtcNow - started);
+                    if (wait > TimeSpan.Zero) await Task.Delay(wait, main);
+                    continue;
+                }
+
+                used.Add(best.Spid);
+                var plan = new UpgradePlan(best.Spid, $"SPID {best.Spid}", 0, 0, best.Target, s.Rules, false, s.Pace, false, true);
+                plan = await WithCeilingAsync(plan);
+                var opt = new CycleOptions(MaxLossRounds: s.MaxLossRounds, StopBelowEp: s.StopBelowEp, SellMode: true, AutoCollect: true);
+                var pname = await PlayerNames.DescribeAsync(best.Spid);
+                Log($"[Tự quét] CHỌN: {pname} lên +{best.Target} (lãi ước tính {best.Pct:P1} trên vốn {best.Cost:N0}). Chạy trong chu kỳ này.");
+
+                var window = interval - (DateTime.UtcNow - started);
+                if (window < TimeSpan.FromMinutes(3)) window = TimeSpan.FromMinutes(3);
+                using var win = CancellationTokenSource.CreateLinkedTokenSource(main);
+                win.CancelAfter(window);
+                _upgrade.ResetSteps();
+                try
+                {
+                    var runner = new CycleRunner(api, Log, _upgrade.SetStepState, _upgrade.SetProgress, _upgrade.ResetSteps);
+                    var reason = await runner.RunAsync(plan, opt, win.Token);
+                    Log("[Tự quét] Kết thúc lượt chạy: " + reason);
+                    if (!win.IsCancellationRequested) shortRuns++; else shortRuns = 0;
+                }
+                catch (OperationCanceledException) when (!main.IsCancellationRequested) { Log("[Tự quét] Hết thời gian chu kỳ, quét lại."); shortRuns = 0; }
+                if (shortRuns >= 3) { Log("[Tự quét] Lượt chạy kết thúc sớm 3 lần liên tiếp (hết EP, lỗ hoặc lỗi), dừng chế độ tự quét."); break; }
+                var rest = interval - (DateTime.UtcNow - started);
+                if (rest > TimeSpan.Zero && !main.IsCancellationRequested) await Task.Delay(rest, main);
+            }
+        }
+        catch (OperationCanceledException) { Log("[Tự quét] Đã dừng theo yêu cầu."); }
+        catch (Exception ex) { Log("[Tự quét] LỖI: " + ex.Message); }
+        finally
+        {
+            try { await AutoHousekeepAsync(api, used, CancellationToken.None); } catch (Exception ex) { Log("[Tự quét] Không dọn được lệnh bán lúc dừng: " + ex.Message); }
+            _upCts?.Dispose();
+            _upCts = null;
+            _upgrade.SetRunning(false);
+            _upgrade.SetProgress(0, 1, "Đã dừng.");
+            _ = RefreshWalletAsync(api);
         }
     }
 

@@ -207,6 +207,29 @@ public sealed class GameApi
         return list;
     }
 
+    /// <summary>POST /transfer/offer/from/{offerId} {"price"}: re-lists an unsold offer at a new price (500 EP listing fee again; captured 2026-11-17).</summary>
+    public async Task<(bool Ok, string Raw)> RelistAsync(string offerId, long price, CancellationToken ct = default)
+    {
+        using var content = new StringContent(new JsonObject { ["price"] = price }.ToJsonString(), Encoding.UTF8, "application/json");
+        using var resp = await _http.PostAsync($"{_base}/transfer/offer/from/{offerId}", content, ct);
+        var text = await resp.Content.ReadAsStringAsync(ct);
+        bool ok = false;
+        try { ok = JsonNode.Parse(text)?["result"]?.GetValue<bool>() == true; if (ok) ApplyMoney(text); } catch { }
+        return (ok && resp.IsSuccessStatusCode, resp.IsSuccessStatusCode ? text : $"HTTP {(int)resp.StatusCode}: {text}");
+    }
+
+    /// <summary>POST /transfer/my/offer/waiting/{offerId} {"_method":"DELETE"}: cancels an unsold offer (the listing fee is not refunded); the card returns to the storage.</summary>
+    public async Task<(bool Ok, string Raw)> CancelOfferAsync(string offerId, CancellationToken ct = default)
+    {
+        using var content = new ByteArrayContent(Encoding.UTF8.GetBytes("{\"_method\":\"DELETE\"}"));
+        content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+        using var resp = await _http.PostAsync($"{_base}/transfer/my/offer/waiting/{offerId}", content, ct);
+        var text = await resp.Content.ReadAsStringAsync(ct);
+        bool ok = false;
+        try { ok = JsonNode.Parse(text)?["result"]?.GetValue<bool>() == true; if (ok) ApplyMoney(text); } catch { }
+        return (ok && resp.IsSuccessStatusCode, resp.IsSuccessStatusCode ? text : $"HTTP {(int)resp.StatusCode}: {text}");
+    }
+
     /// <summary>POST /transfer/my/offer/completed/{offerId} {"_method":"DELETE"}: receives the money of a sold card. Received = EP paid out.</summary>
     public async Task<(bool Ok, long Received, string Raw)> CollectOfferAsync(string offerId, CancellationToken ct = default)
     {

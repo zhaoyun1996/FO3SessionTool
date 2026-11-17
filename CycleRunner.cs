@@ -608,7 +608,7 @@ public sealed class CycleRunner
             }
             listed = true; _sellFailures = 0;
             if (GameApi.ParseWallet(res.Raw) == null) _api.Spend(price.Fee);
-            long cut = res.Offer?.CompleteFee > 0 ? res.Offer.CompleteFee : SaleTax(ask);
+            long cut = SaleTax(ask);   // the offer's completefee.base is the tax before the 70% refund, not what the game keeps
             long expectedIn = ask - cut;
             RoundStat st;
             lock (_lock)

@@ -43,7 +43,7 @@ public static class MarketSeller
             }
             failures = 0; listed++; fees += price.Fee;
             if (GameApi.ParseWallet(res.Raw) == null) api.Spend(price.Fee);
-            log($"[Bán] Đã đăng bán {listed}/{cardIds.Count}: giá {ask:N0}, game giữ {(res.Offer?.CompleteFee > 0 ? res.Offer.CompleteFee : CycleRunner.SaleTax(ask)):N0} khi bán xong.");
+            log($"[Bán] Đã đăng bán {listed}/{cardIds.Count}: giá {ask:N0}, game giữ {CycleRunner.SaleTax(ask):N0} khi bán xong.");
         }
         step(stepIndex, StepState.Done);
         if (!plan.CollectAfter || listed == 0) return new Result(listed, listed * ask, fees, null);
