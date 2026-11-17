@@ -389,6 +389,17 @@ public sealed class GameApi
         catch { return new BuyResult(false, null, text); }
     }
 
+    /// <summary>ES the merge needs: the server sent {"es": n} before and a bare number now; anything else counts as 0.</summary>
+    private static int NeedEs(JsonNode? n)
+    {
+        try
+        {
+            if (n is JsonObject o) return o["es"]?.GetValue<int>() ?? 0;
+            return n?.GetValue<int>() ?? 0;
+        }
+        catch { return 0; }
+    }
+
     public static EnhancePreview ParsePreview(string text)
     {
         var n = JsonNode.Parse(text);
@@ -397,7 +408,7 @@ public sealed class GameApi
             n?["price"]?.GetValue<long>() ?? 0,
             n?["probability"]?.GetValue<int>() ?? 0,
             n?["enhancepay"]?.GetValue<long>() ?? 0,
-            n?["needes"]?["es"]?.GetValue<int>() ?? 0,
+            NeedEs(n?["needes"]),
             text);
     }
 
