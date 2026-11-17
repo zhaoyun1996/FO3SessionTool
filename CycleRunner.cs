@@ -66,6 +66,7 @@ public sealed class CycleRunner
     private bool _buyBlockedEp;
     private volatile bool _trading, _merging, _selling;
     private readonly Dictionary<string, long> _cardCost = new();   // card id -> EP that went into it (buy price + merge fees of its whole chain)
+    private readonly HashSet<string> _skipped = new();     // cards the sell check refused to list (loss or above what the system buys): kept, not tried again
     private readonly HashSet<string> _offered = new();     // cards already listed (they may still show up in the storage)
     private int _sold, _pending, _sellFailures, _unknownStatusLogged, _kept;
     private bool _keepMode;
@@ -95,7 +96,7 @@ public sealed class CycleRunner
         _reason = null;
         _bought = _merged = _tradesDone = _roundBought = _roundMerged = _lossStreak = _inFlight = 0;
         _keepMode = opt.KeepMode; _kept = 0;
-        _sold = _pending = _sellFailures = 0; _collected = 0; _offered.Clear(); _statusSeen.Clear(); _cardCost.Clear();
+        _sold = _pending = _sellFailures = 0; _collected = 0; _offered.Clear(); _skipped.Clear(); _statusSeen.Clear(); _cardCost.Clear();
         _round1 = 1; _totalNet = 0; _spent = _spentAtReserve = 0; _targetValue = 0; _lastFee = 0; _buyBlock = ""; _buyBlockedEp = false;
         _lastActivity = DateTime.UtcNow;
         double pace = plan.Pace;
@@ -546,6 +547,8 @@ public sealed class CycleRunner
 
     // ================= seller (sell mode) =================
     /// <summary>What the game keeps of a sale (the rules of 2026-11): 30% tax up to 500,000 EP and 40% above, 70% of it refunded for every 3Sea manager, so 9% / 12%.</summary>
+    internal const long SystemBuyMax = 5_000_000_000;   // the system buys listings worth up to 5 billion EP
+
     internal static long SaleTax(long price) => price <= 0 ? 0 : (long)Math.Round(0.09 * Math.Min(price, 500_000) + 0.12 * Math.Max(0, price - 500_000));
 
     /// <summary>Takes one target-level card and lists it at the price the game suggests on the sale screen: the system buys listings at or below that price
@@ -555,7 +558,7 @@ public sealed class CycleRunner
         string? id;
         lock (_lock)
         {
-            id = _pool[plan.Target].FirstOrDefault(x => !_offered.Contains(x));
+            id = _pool[plan.Target].FirstOrDefault(x => !_offered.Contains(x) && !_skipped.Contains(x));
             if (id != null) _pool[plan.Target].Remove(id);
         }
         if (id == null) { _selling = false; await Task.Delay(1500, tok); return; }
@@ -578,6 +581,20 @@ public sealed class CycleRunner
             long cost; lock (_lock) cost = _cardCost.GetValueOrDefault(id);   // what went into this very card
             long ask = price.Default > 0 ? price.Default : price.Lower;   // the suggested price: the system buys at or below it
             if (ask <= 0) { _step(CycleRunner.TradeStep, StepState.Error); Stop("Game không đưa ra giá gợi ý cho thẻ này (/transfer/price)."); return; }
+            // the checks before listing: the system buys only up to 5 billion EP, and a card that would sell below what it cost is kept (listing costs 500 EP and the tax is not refunded)
+            long cost0; lock (_lock) cost0 = _cardCost.GetValueOrDefault(id);
+            long takeHome = ask - SaleTax(ask) - price.Fee;
+            string? refuse = ask > SystemBuyMax ? $"giá gợi ý {ask:N0} vượt mức hệ thống thu mua tối đa ({SystemBuyMax:N0}), chỉ người chơi khác mới mua được"
+                           : cost0 > 0 && takeHome < cost0 ? $"bán xong chỉ nhận ≈{takeHome:N0} (giá {ask:N0} trừ thuế {SaleTax(ask):N0} và phí đăng {price.Fee:N0}) thấp hơn vốn của thẻ {cost0:N0}, lỗ ≈{cost0 - takeHome:N0}"
+                           : null;
+            if (refuse != null)
+            {
+                lock (_lock) { _skipped.Add(id); _lossStreak++; }
+                _step(CycleRunner.TradeStep, StepState.Error);
+                _log($"[Xoay vòng/Bán] KHÔNG đăng thẻ +{plan.Target} (…{Tail(id)}): {refuse}. Thẻ được giữ trong kho.");
+                if (_lossStreak >= opt.MaxLossRounds) Stop($"Đã {_lossStreak} thẻ liên tiếp không đáng bán, dừng theo cài đặt.");
+                return;
+            }
             _log($"[Xoay vòng/Bán] Đăng bán thẻ +{plan.Target} (…{Tail(id)}) ở giá gợi ý {ask:N0} EP (hệ thống thu mua trong 1-15 phút; khung {price.Lower:N0}–{price.Upper:N0}), phí đăng {price.Fee:N0}...");
             // committed: a stop request does not interrupt it from here
             var res = await _api.SellAsync(id, ask, CancellationToken.None);

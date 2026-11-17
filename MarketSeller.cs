@@ -20,6 +20,7 @@ public static class MarketSeller
         if (price == null) { step(stepIndex, StepState.Error); return new Result(0, 0, 0, "Không đọc được khung giá bán (/transfer/price)."); }
         long ask = price.Default > 0 ? price.Default : price.Lower;   // the suggested price: the system buys at or below it
         if (ask <= 0) { step(stepIndex, StepState.Error); return new Result(0, 0, 0, "Game không đưa ra giá gợi ý cho thẻ này (/transfer/price)."); }
+        if (ask > CycleRunner.SystemBuyMax) { step(stepIndex, StepState.Error); return new Result(0, 0, 0, $"Giá gợi ý {ask:N0} vượt mức hệ thống thu mua tối đa ({CycleRunner.SystemBuyMax:N0}), không đăng."); }
         log($"[Bán] Đăng bán {cardIds.Count} thẻ +{plan.Target} ở giá gợi ý {ask:N0} EP (hệ thống thu mua trong 1-15 phút; khung {price.Lower:N0}–{ask:N0}), phí đăng {price.Fee:N0}/thẻ.");
 
         int listed = 0, failures = 0; long fees = 0;
