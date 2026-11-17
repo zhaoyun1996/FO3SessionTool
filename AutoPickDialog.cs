@@ -3,6 +3,8 @@ namespace FO3SessionTool;
 /// <summary>Settings of the auto mode: every cycle it scans the market, picks the most profitable player to build to +6 / +7 and sell to the system, and runs for the interval.</summary>
 public sealed class AutoPickDialog : Form
 {
+    private readonly DarkCheck _use5 = new() { Text = "Ép đến +5 (chỉ khi đầu ra là đổi thẻ)", Checked = true, AutoSize = true };
+    private readonly DarkCheck _use6 = new() { Text = "Ép đến +6", Checked = true, AutoSize = true };
     private readonly DarkNumber _minPct = new() { Minimum = 0, Maximum = 200, Value = 5, Width = 90 };
     private readonly DarkNumber _interval = new() { Minimum = 3, Maximum = 240, Value = 10, Width = 90 };
     private readonly DarkNumber _pool = new() { Minimum = 20, Maximum = 3000, Value = 400, Width = 90, Increment = 50 };
@@ -64,7 +66,7 @@ public sealed class AutoPickDialog : Form
     private static string SettingsFile => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "FO3SessionTool", "auto-settings.json");
 
     /// <summary>Remembers the last values of this dialog so the next opening starts from them.</summary>
-    private sealed record Saved(decimal MinPct, decimal Interval, decimal Pool, decimal Loss, decimal Parallel, decimal MinProfit, bool RankProfit, string Seasons);
+    private sealed record Saved(decimal MinPct, decimal Interval, decimal Pool, decimal Loss, decimal Parallel, decimal MinProfit, bool RankProfit, string Seasons, bool Use5 = true, bool Use6 = true);
 
     private void LoadSaved()
     {
@@ -75,7 +77,7 @@ public sealed class AutoPickDialog : Form
             static decimal Clamp(DarkNumber n, decimal x) => Math.Min(n.Maximum, Math.Max(n.Minimum, x));
             _minPct.Value = Clamp(_minPct, v.MinPct); _interval.Value = Clamp(_interval, v.Interval); _pool.Value = Clamp(_pool, v.Pool);
             _loss.Value = Clamp(_loss, v.Loss); _parallel.Value = Clamp(_parallel, v.Parallel); _minProfit.Value = Clamp(_minProfit, v.MinProfit);
-            _rankProfit.Checked = v.RankProfit; _seasonsBox.Text = v.Seasons ?? "";
+            _rankProfit.Checked = v.RankProfit; _seasonsBox.Text = v.Seasons ?? ""; _use5.Checked = v.Use5; _use6.Checked = v.Use6;
         }
         catch { }
     }
@@ -85,7 +87,7 @@ public sealed class AutoPickDialog : Form
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(SettingsFile)!);
-            File.WriteAllText(SettingsFile, System.Text.Json.JsonSerializer.Serialize(new Saved(_minPct.Value, _interval.Value, _pool.Value, _loss.Value, _parallel.Value, _minProfit.Value, _rankProfit.Checked, _seasonsBox.Text)));
+            File.WriteAllText(SettingsFile, System.Text.Json.JsonSerializer.Serialize(new Saved(_minPct.Value, _interval.Value, _pool.Value, _loss.Value, _parallel.Value, _minProfit.Value, _rankProfit.Checked, _seasonsBox.Text, _use5.Checked, _use6.Checked)));
         }
         catch { }
     }
@@ -97,7 +99,7 @@ public sealed class AutoPickDialog : Form
             var typed = new HashSet<int>();
             foreach (var part in _seasonsBox.Text.Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries))
                 if (int.TryParse(part, out var n) && n > 0) typed.Add(n);
-            return new(true, false, (double)_minPct.Value / 100.0, (int)_interval.Value, (int)_pool.Value, typed.Count > 0 ? typed : null, _pace, _rules, (int)_loss.Value, _out, (int)_parallel.Value, (long)_minProfit.Value * 1_000_000L, _rankProfit.Checked);
+            return new(_use6.Checked, false, (double)_minPct.Value / 100.0, (int)_interval.Value, (int)_pool.Value, typed.Count > 0 ? typed : null, _pace, _rules, (int)_loss.Value, _out, (int)_parallel.Value, (long)_minProfit.Value * 1_000_000L, _rankProfit.Checked, _use5.Checked);
         }
     }
 
@@ -126,6 +128,8 @@ public sealed class AutoPickDialog : Form
             c.Anchor = AnchorStyles.Left; t.Controls.Add(c, 1, row++);
         }
         Add("Lãi tối thiểu để chạy (% vốn)", _minPct);
+        var lv = new FlowLayoutPanel { AutoSize = true, WrapContents = false }; lv.Controls.Add(_use5); lv.Controls.Add(_use6);
+        Add("Mức đích", lv);
         Add("Số cầu thủ chạy song song", _parallel);
         Add("Lãi tối thiểu mỗi thẻ (triệu EP)", _minProfit);
         Add("Cách xếp hạng", _rankProfit);
@@ -144,6 +148,16 @@ public sealed class AutoPickDialog : Form
         AcceptButton = _ok; CancelButton = _cancel;
         LoadSaved();
         Theme.Apply(this);
-        _ok.Click += (_, _) => SaveSaved();
+        bool tradeOut = !output.SellMode && !output.KeepMode;
+        if (!tradeOut) { _use5.Checked = false; _use5.Enabled = false; }
+        _ok.Click += (_, _) =>
+        {
+            if (!(_use5.Checked && tradeOut) && !_use6.Checked)
+            {
+                MessageBox.Show("Chọn ít nhất một mức đích.", Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                DialogResult = DialogResult.None; return;
+            }
+            SaveSaved();
+        };
     }
 }

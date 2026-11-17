@@ -803,7 +803,7 @@ public sealed class MainForm : Form
                 catch (Exception ex) { Log("[Tự quét/Nhận tiền] Lỗi: " + ex.Message); }
             }
         });
-        Log($"[Tự quét] Bắt đầu: mức đích {(s.Use6 ? "+6 " : "")}{(s.Use7 ? "+7 " : "")}, lãi tối thiểu {s.MinPct:P0}, chu kỳ {s.IntervalMinutes} phút, quét {s.PoolSize} cầu thủ mạnh nhất" +
+        Log($"[Tự quét] Bắt đầu: mức đích {(s.Use5 && !s.Out.SellMode && !s.Out.KeepMode ? "+5 " : "")}{(s.Use6 ? "+6 " : "")}{(s.Use7 ? "+7 " : "")}, lãi tối thiểu {s.MinPct:P0}, chu kỳ {s.IntervalMinutes} phút, quét {s.PoolSize} cầu thủ mạnh nhất" +
             (s.Seasons is { Count: > 0 } ? $" của {s.Seasons.Count} mùa đã chọn" : "") + ". Sau khi ép: " +
             (s.Out.KeepMode ? "giữ thẻ trong kho." : s.Out.SellMode ? "bán ở giá gợi ý, " + (s.Out.AutoCollect ? "tự nhận tiền." : "không tự nhận tiền.") : $"giao dịch khi tổng thẻ đạt {s.Out.TradeMin:N0}-{s.Out.TradeMax:N0} EP."));
         try

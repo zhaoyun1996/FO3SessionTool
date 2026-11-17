@@ -11,7 +11,7 @@ public sealed record AutoCandidate(long Spid, int Overall, int Target, int Cards
 /// What happens to a card once merged (sell / trade / keep, collecting the money) is the tab's own output choice, carried in Out.</summary>
 public sealed record AutoSettings(bool Use6, bool Use7, double MinPct, int IntervalMinutes, int PoolSize, IReadOnlySet<int>? Seasons, double Pace,
     IReadOnlyDictionary<int, (int A, int B)> Rules, int MaxLossRounds, CycleOptions Out,
-    int Parallel = 1, long MinProfit = 0, bool RankByProfit = false)
+    int Parallel = 1, long MinProfit = 0, bool RankByProfit = false, bool Use5 = false)
 {
     public long StopBelowEp => Out.StopBelowEp;
 }
@@ -28,7 +28,7 @@ public static class AutoPicker
     /// against what the sale to the system pays (the suggested price minus the sale tax and the listing fee). Read only. Best first.</summary>
     public static async Task<List<AutoCandidate>> ScanAsync(GameApi api, AutoSettings s, Action<string> status, CancellationToken ct)
     {
-        var targets = new List<int>(); if (s.Use6) targets.Add(6); if (s.Use7) targets.Add(7);
+        var targets = new List<int>(); if (s.Use5 && !s.Out.SellMode && !s.Out.KeepMode) targets.Add(5); if (s.Use6) targets.Add(6); if (s.Use7) targets.Add(7);
         var db = await LocalPlayerDb.GetAsync() ?? throw new InvalidOperationException("Không đọc được dữ liệu cầu thủ trong thư mục game.");
         var roster = await api.GetRosterSeasonsAsync();
         var pool = db.All.Where(r => r.Overall > 1)
