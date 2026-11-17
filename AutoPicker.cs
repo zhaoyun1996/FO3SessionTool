@@ -18,6 +18,9 @@ public sealed record AutoSettings(bool Use6, bool Use7, double MinPct, int Inter
 public static class AutoPicker
 {
     /// <summary>Estimated merge fees of one +target card: the captured fees are 5,000 / 10,000 / 20,000 for +2 / +3 / +4, assumed to keep doubling.</summary>
+    /// <summary>Chance that a merge into +target succeeds. Measured from the live log: +7 is 60% (11 successes, 7 failures); a failure loses the cards, so one +7 card really costs 1/p times the cards.</summary>
+    public static double SuccessRate(int target) => target >= 7 ? 0.60 : 1.0;
+
     public static long MergeFees(int target) => (target - 1) * 5000L * (1L << (target - 2));
 
     /// <summary>Scans the market: for the strongest cards (the pool) and each wanted target level, what it costs to buy the +1 cards (the cheapest listings, 2^(target-1) of them)
@@ -55,12 +58,13 @@ public static class AutoPicker
                 if (p == null) continue;
                 long ask = p.Default > 0 ? p.Default : p.Lower;
                 if (ask <= 0) continue;
-                long cost = ask1.Take(need).Sum();
+                double succ = SuccessRate(t);
+                long cost = (long)(ask1.Take(need).Sum() / succ);
                 if (s.Out.SellMode || s.Out.KeepMode)
                 {
                     // sold to the system at the suggested price (a kept card is ranked the same way: what it would fetch)
                     if (ask > CycleRunner.SystemBuyMax) continue;
-                    found.Add(new AutoCandidate(r.Spid, r.Overall, t, need, cost, ask, ask - CycleRunner.SaleTax(ask) - p.Fee, MergeFees(t) + p.Fee,
+                    found.Add(new AutoCandidate(r.Spid, r.Overall, t, need, cost, ask, ask - CycleRunner.SaleTax(ask) - p.Fee, (long)(MergeFees(t) / succ) + p.Fee,
                         s.Out.KeepMode ? "giữ thẻ, xếp hạng theo giá bán gợi ý" : "bán ở giá gợi ý"));
                 }
                 else
@@ -68,7 +72,7 @@ public static class AutoPicker
                     // traded: the game values a card at 1.25 x its floor price and the offers paid back about that much (0.95 allows for selling the received card); one card per trade at most TradeMax
                     long value = p.Lower * 5 / 4;
                     if (value <= 0 || value > s.Out.TradeMax) continue;
-                    found.Add(new AutoCandidate(r.Spid, r.Overall, t, need, cost, value, (long)(value * 0.95), MergeFees(t), "đổi, ước tính 0,95 giá trị đổi"));
+                    found.Add(new AutoCandidate(r.Spid, r.Overall, t, need, cost, value, (long)(value * 0.95), (long)(MergeFees(t) / succ), "đổi, ước tính 0,95 giá trị đổi"));
                 }
                 await Pacing.Wait(0.05, 0.12, 1.0, ct);
             }
