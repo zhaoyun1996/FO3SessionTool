@@ -1,6 +1,6 @@
 # FO3 Session Tool
 
-Công cụ WinForms (.NET 10, chỉ chạy trên Windows) cho server game riêng **3Sea** (FIFA Online 3):
+Công cụ WinForms (.NET 8 và .NET 10, chỉ chạy trên Windows) cho server game riêng **3Sea** (FIFA Online 3):
 
 - Đăng nhập giống launcher (hàng chờ → token → phiên game), lưu phiên mã hóa bằng DPAPI.
 - **Ép thẻ tự động**: mua thẻ +1 hoặc dùng thẻ trong kho, ép theo rule đến +10.
@@ -95,9 +95,11 @@ Sao chép `config.example.json` thành `config.json` (đặt cạnh file `.exe`,
 ```powershell
 dotnet build FO3SessionTool.csproj -c Debug
 
-# bản chạy độc lập 1 file
-dotnet publish FO3SessionTool.csproj -c Release -r win-x64 --self-contained `
+# bản chạy độc lập 1 file (chọn -f net10.0-windows -o dist, hoặc -f net8.0-windows -o dist_net8)
+dotnet publish FO3SessionTool.csproj -c Release -f net10.0-windows -r win-x64 --self-contained `
   -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o dist
+dotnet publish FO3SessionTool.csproj -c Release -f net8.0-windows -r win-x64 --self-contained `
+  -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o dist_net8
 ```
 
 Tool chạy quyền người dùng thường. Riêng phần Giả lập xếp hạng (trong tab Trận đấu) cần mở tool bằng quyền admin (chuột phải > Run as administrator) khi game đang chạy admin; tab sẽ báo và khoá nếu thiếu quyền.
@@ -108,7 +110,7 @@ Chép `config.json` vào `dist\` cạnh `FO3SessionTool.exe`. Lệnh publish s�
 
 - Tool nhắm tới **.NET 10** (`net10.0-windows`, WinForms), nhưng bản trong `dist\` được publish **self-contained**: runtime .NET nằm sẵn trong file exe. Máy khác **không cần cài .NET** (kể cả .NET 8); chỉ cần Windows 10 (1607 trở lên) hoặc Windows 11, 64-bit. Chép `FO3SessionTool.exe` cùng `config.json` vào một thư mục là chạy.
 - `config.json` chứa `hwid` của máy bạn đã bắt launcher (mục 2.1). Máy khác dùng chung file này thì server thấy cùng một mã phần cứng; nếu đăng nhập thất bại, xem mục 8 và file log `%APPDATA%\FO3SessionTool\logs\login-YYYYMMDD.log`.
-- Nếu máy đó cần **tự build** và chỉ có SDK .NET 8: mã nguồn biên dịch được với .NET 8 khi đổi `<TargetFramework>` trong `FO3SessionTool.csproj` từ `net10.0-windows` thành `net8.0-windows` (đã thử build trên một bản copy, không phải sửa mã). Lệnh publish giữ nguyên.
+- Dự án biên dịch cho cả **.NET 8** (`net8.0-windows`) và **.NET 10** (`net10.0-windows`); `dotnet build` build cả hai, máy chỉ có SDK .NET 8 vẫn build được bằng `-f net8.0-windows`. Bản `dist_net8\` publish từ mục tiêu .NET 8, cũng self-contained.
 
 Lần đầu mở: bấm **Đăng nhập**, nhập tài khoản và mật khẩu. Tool xếp hàng giống launcher, đổi token lấy phiên game, rồi lưu phiên (mã hóa DPAPI, chỉ tài khoản Windows hiện tại giải mã được) tại `%APPDATA%\FO3SessionTool\session.dat`. Lần sau tool tự khôi phục phiên nếu server còn chấp nhận. Nhật ký lưu ở `%APPDATA%\FO3SessionTool\logs\`.
 

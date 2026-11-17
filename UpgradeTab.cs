@@ -23,7 +23,7 @@ public sealed class UpgradeTab : UserControl
     private readonly DarkTextBox _name = new() { Anchor = AnchorStyles.Left | AnchorStyles.Right, PlaceholderText = "Tên cầu thủ, ví dụ: ronaldo" };
     private readonly DarkButton _btnFind = new() { Text = "Tìm", Anchor = AnchorStyles.Left | AnchorStyles.Right };
     private readonly DarkButton _btnScan = new() { Text = "Quét thị trường", Anchor = AnchorStyles.Left | AnchorStyles.Right };
-    private readonly DarkButton _btnAuto = new() { Text = "Tự quét + bán", Anchor = AnchorStyles.Left | AnchorStyles.Right };
+    private readonly DarkButton _btnAuto = new() { Text = "Tự quét + ép", Anchor = AnchorStyles.Left | AnchorStyles.Right };
     private long _wantSpid;   // card to select once the next search finishes
     private readonly DarkCombo _results = new() { Anchor = AnchorStyles.Left | AnchorStyles.Right, CustomItems = true };
     private Bitmap? _sprite;   // season badge sprite (badged.png)
