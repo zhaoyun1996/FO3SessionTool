@@ -227,6 +227,11 @@ public sealed class CycleRunner
 
     private async Task BuyOnce(UpgradePlan plan, CycleOptions opt, double pace, CancellationToken tok)
     {
+        if (_draining && _need.Length > plan.Target && Pipeline() % Math.Max(1, _need[plan.Target]) == 0)
+        {
+            await Pacing.Wait(1.5, 3, pace, tok);   // every card in the pipeline is part of a complete target card: nothing more to buy
+            return;
+        }
         if (_cardCount >= opt.StorageSlots)
         {
             // full storage: buying is impossible; merging / trading will free slots, the supervisor stops the run when nothing can
@@ -670,6 +675,19 @@ public sealed class CycleRunner
 
     private bool busy0() => _trading || _merging || _selling;
 
+    private volatile bool _draining;
+    /// <summary>True once BeginDrain was called.</summary>
+    public bool Draining => _draining;
+
+    /// <summary>Winds the session down instead of cutting it: no new batch is started (the buyer only buys what is still needed to finish the cards already under way),
+    /// the merger, the seller / trader finish them, and the run ends by itself when the pipeline is a whole number of target cards and nothing is moving.</summary>
+    public void BeginDrain()
+    {
+        if (_draining) return;
+        _draining = true;
+        _log("[Xoay vòng] Hết thời gian chu kỳ: không bắt đầu lô mới, ép nốt và xử lý các thẻ đang làm dở rồi mới kết thúc.");
+    }
+
     private async Task SuperviseOnce(UpgradePlan plan, CycleOptions opt, CancellationToken tok)
     {
         await Task.Delay(2000, tok);
@@ -719,6 +737,12 @@ public sealed class CycleRunner
         // nothing left that could make progress: no EP and nothing in flight / ready to sell, or no stock on the market for a long time
         double idle = (now - _lastActivity).TotalSeconds;
         bool busy = busy0();
+        if (_draining && !busy && idle > 25 && Pipeline() % Math.Max(1, _need[plan.Target]) == 0)
+        {
+            int left = Pipeline() / Math.Max(1, _need[plan.Target]);
+            Stop("Hết phiên cầu thủ này, đã ép và xử lý xong lô đang làm." + (left > 0 ? $" Còn {left} thẻ +{plan.Target} chưa {(opt.KeepMode ? "xử lý (giữ lại)" : opt.SellMode ? "bán được" : "đủ giá trị để đổi")}." : ""));
+            return;
+        }
         if (_buyBlockedEp && !busy && idle > 20 && Pipeline() > 0 && !waitingForBuyers && !(opt.SellMode ? waiting > 0 : waiting * Math.Max(_targetValue, 1) >= opt.TradeMin))
         { Stop(_buyBlock + (opt.KeepMode ? " Còn thẻ chưa ép đủ mức." : opt.SellMode ? " Còn thẻ chưa ép đủ mức để bán." : " Còn thẻ chưa đủ giá trị để đổi.")); return; }
         if (_buyBlockedEp && !busy && idle > 20 && Pipeline() == 0 && !waitingForBuyers) { Stop(_buyBlock); return; }

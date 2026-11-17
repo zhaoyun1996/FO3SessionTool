@@ -837,25 +837,41 @@ public sealed class MainForm : Form
                 var pname = await PlayerNames.DescribeAsync(best.Spid);
                 Log($"[Tự quét] CHỌN: {pname} lên +{best.Target} (lãi ước tính {best.Pct:P1} trên vốn {best.Cost:N0}). Chạy trong chu kỳ này.");
 
+                // the player's session is never cut at the time mark: at the mark the runner winds down (finishes the cards under way) and only then do we scan again
                 var window = interval - (DateTime.UtcNow - started);
                 if (window < TimeSpan.FromMinutes(3)) window = TimeSpan.FromMinutes(3);
-                using var win = CancellationTokenSource.CreateLinkedTokenSource(main);
-                win.CancelAfter(window);
+                using var hard = CancellationTokenSource.CreateLinkedTokenSource(main);
                 _upgrade.ResetSteps();
+                var runner = new CycleRunner(api, Log, _upgrade.SetStepState, _upgrade.SetProgress, _upgrade.ResetSteps);
+                var drainTimer = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await Task.Delay(window, hard.Token);
+                        runner.BeginDrain();
+                        await Task.Delay(TimeSpan.FromMinutes(25), hard.Token);   // safety net: a session that does not wind down within 25 minutes is stopped
+                        Log("[Tự quét] Phiên không kết thúc được sau 25 phút kể từ giờ hết chu kỳ, dừng lượt chạy này.");
+                        hard.Cancel();
+                    }
+                    catch (OperationCanceledException) { }
+                });
                 try
                 {
-                    var runner = new CycleRunner(api, Log, _upgrade.SetStepState, _upgrade.SetProgress, _upgrade.ResetSteps);
                     Volatile.Write(ref runnerActive[0], true);
                     string reason;
-                    try { reason = await runner.RunAsync(plan, opt, win.Token); }
+                    try { reason = await runner.RunAsync(plan, opt, hard.Token); }
                     finally { Volatile.Write(ref runnerActive[0], false); }
-                    Log("[Tự quét] Kết thúc lượt chạy: " + reason);
-                    if (!win.IsCancellationRequested) shortRuns++; else shortRuns = 0;
+                    Log("[Tự quét] Kết thúc phiên: " + reason);
+                    if (runner.Draining) shortRuns = 0; else shortRuns++;
                 }
-                catch (OperationCanceledException) when (!main.IsCancellationRequested) { Log("[Tự quét] Hết thời gian chu kỳ, quét lại."); shortRuns = 0; }
-                if (shortRuns >= 3) { Log("[Tự quét] Lượt chạy kết thúc sớm 3 lần liên tiếp (hết EP, lỗ hoặc lỗi), dừng chế độ tự quét."); break; }
-                var rest = interval - (DateTime.UtcNow - started);
-                if (rest > TimeSpan.Zero && !main.IsCancellationRequested) await Task.Delay(rest, main);
+                catch (OperationCanceledException) when (!main.IsCancellationRequested) { Log("[Tự quét] Lượt chạy bị dừng, quét lại."); shortRuns++; }
+                finally { hard.Cancel(); try { await drainTimer; } catch { } }
+                if (shortRuns >= 3) { Log("[Tự quét] Phiên kết thúc sớm 3 lần liên tiếp (hết EP, lỗ hoặc lỗi), dừng chế độ tự quét."); break; }
+                if (!runner.Draining)
+                {
+                    var rest = interval - (DateTime.UtcNow - started);   // an early end: do not rescan in a tight loop
+                    if (rest > TimeSpan.Zero && !main.IsCancellationRequested) await Task.Delay(rest, main);
+                }
             }
         }
         catch (OperationCanceledException) { Log("[Tự quét] Đã dừng theo yêu cầu."); }
