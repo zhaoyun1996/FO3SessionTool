@@ -23,7 +23,6 @@ public sealed class UpgradeTab : UserControl
     private readonly DarkTextBox _name = new() { Anchor = AnchorStyles.Left | AnchorStyles.Right, PlaceholderText = "Tên cầu thủ, ví dụ: ronaldo" };
     private readonly DarkButton _btnFind = new() { Text = "Tìm", Anchor = AnchorStyles.Left | AnchorStyles.Right };
     private readonly DarkButton _btnScan = new() { Text = "Quét thị trường", Anchor = AnchorStyles.Left | AnchorStyles.Right };
-    private readonly DarkButton _btnAuto = new() { Text = "Tự quét + ép", Anchor = AnchorStyles.Left | AnchorStyles.Right };
     private long _wantSpid;   // card to select once the next search finishes
     private readonly DarkCombo _results = new() { Anchor = AnchorStyles.Left | AnchorStyles.Right, CustomItems = true };
     private Bitmap? _sprite;   // season badge sprite (badged.png)
@@ -71,22 +70,6 @@ public sealed class UpgradeTab : UserControl
     private string SeasonLabel(int s) { var l = _players.SeasonLabelOf(s); return l.Length > 0 ? $"Mùa {s} · {l}" : $"Mùa {s}"; }
     private void UpdatePreferText() =>
         _btnPrefer.Text = _preferSeasons.Count == 0 ? "Không ưu tiên (chọn...)" : "Ưu tiên: " + string.Join(", ", _preferSeasons.OrderBy(x => x).Take(4).Select(s => "M" + s)) + (_preferSeasons.Count > 4 ? $" +{_preferSeasons.Count - 4}" : "");
-    private void OpenAuto()
-    {
-        if (ApiProvider?.Invoke() == null) { MessageBox.Show("Hãy đăng nhập trước.", "Tự quét", MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
-        // what happens after the merge comes from the tab: the loop list is "Giao dịch / Bán thị trường / Không làm gì", the single-run list "Không làm gì / Bán thị trường"
-        bool loop = _runLoop.Checked && !StockMode;
-        bool sell = OutSell, keep = loop ? OutKeep : _outMode.SelectedIndex == 0;
-        var output = new CycleOptions(TradeMin: (long)_tradeMin.Value, StopBelowEp: (long)_stopBelow.Value, SellMode: sell, AutoCollect: _collectAuto.Checked, KeepMode: keep,
-            PreferSeasons: _preferSeasons.ToHashSet());
-        string outText = keep ? "KHÔNG làm gì (giữ thẻ trong kho)"
-            : sell ? "bán thị trường ở giá gợi ý, " + (_collectAuto.Checked ? "tự nhận tiền" : "không tự nhận tiền")
-            : $"giao dịch khi tổng thẻ đạt từ {_tradeMin.Value:N0} EP" + (_preferSeasons.Count > 0 ? ", ưu tiên các mùa đã chọn" : "");
-        using var dlg = new AutoPickDialog(outText, PaceFactor[_pace.SelectedIndex < 0 ? 1 : _pace.SelectedIndex], Rules, output, ApiProvider?.Invoke());
-        if (dlg.ShowDialog(FindForm()) != DialogResult.OK) return;
-        AutoRequested?.Invoke(dlg.Result);
-    }
-
     private async void OpenScan()
     {
         var api = ApiProvider?.Invoke();
@@ -98,19 +81,6 @@ public sealed class UpgradeTab : UserControl
         _wantSpid = dlg.PickedSpid;
         _name.Text = dlg.PickedName;
         await SearchAsync(dlg.PickedName);
-    }
-
-    /// <summary>Shows a player (picked by the auto mode) in the player box: fills the name and selects that exact card in the result list.</summary>
-    public async void ShowPlayer(long spid, string describe)
-    {
-        try
-        {
-            string name = describe.Contains(" - ") ? describe[..describe.IndexOf(" - ", StringComparison.Ordinal)] : describe;
-            _wantSpid = spid;
-            _name.Text = name;
-            await SearchAsync(name);
-        }
-        catch { }
     }
 
     private void PickPreferred()
@@ -154,7 +124,6 @@ public sealed class UpgradeTab : UserControl
     public event Action<UpgradePlan>? RunRequested;
     public event Action<UpgradePlan, CycleOptions>? CycleRequested;   // loop mode: buy +1 cards non-stop, merge, trade   // loop mode: buy -> merge -> trade until stopped
     public event Action? StopRequested;
-    public event Action<AutoSettings>? AutoRequested;   // auto mode: scan, pick the best player at +6/+7, run, repeat
 
     public UpgradeTab(PlayerSearch players, Action<string> log)
     {
@@ -220,12 +189,11 @@ public sealed class UpgradeTab : UserControl
     private Control BuildPlayerBox()
     {
         var box = new DarkGroup { Text = "1. Cầu thủ", Dock = DockStyle.Fill };
-        var t = Grid(5, 3);
+        var t = Grid(4, 3);
         t.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 70));
         t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         t.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 70));
         t.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 140));
-        t.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120));
         t.RowStyles.Add(new RowStyle(SizeType.Absolute, Theme.RowH));
         t.RowStyles.Add(new RowStyle(SizeType.Absolute, Theme.RowH));
         t.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
@@ -234,9 +202,6 @@ public sealed class UpgradeTab : UserControl
         t.Controls.Add(_name, 1, 0);
         t.Controls.Add(_btnFind, 2, 0);
         t.Controls.Add(_btnScan, 3, 0);
-        t.Controls.Add(_btnAuto, 4, 0);
-        _btnAuto.Click += (_, _) => OpenAuto();
-        _tip.SetToolTip(_btnAuto, "Tự quét thị trường, chọn cầu thủ lãi nhất khi ép lên +6, phần sau ép theo các ô của tab, lặp lại sau mỗi chu kỳ. Nút Dừng dừng cả vòng lặp.");
         _btnScan.Click += (_, _) => OpenScan();
         _tip.SetToolTip(_btnScan, "Xếp hạng các cầu thủ của một mùa theo giá trị đổi / vốn mua cho xoay vòng (chỉ đọc giá chợ).");
         t.Controls.Add(Lbl("Kết quả"), 0, 1);
