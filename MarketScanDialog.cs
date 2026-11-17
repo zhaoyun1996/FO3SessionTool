@@ -58,7 +58,7 @@ public sealed class MarketScanDialog : Form
         top.Controls.Add(new Label { Text = "Mùa thẻ", AutoSize = true, Margin = new Padding(3, 8, 6, 0) });
         top.Controls.Add(_season);
         top.Controls.Add(new Label { Text = "Mức", AutoSize = true, Margin = new Padding(10, 8, 4, 0) }); top.Controls.Add(_level);
-        top.Controls.Add(new Label { Text = "Quét top", AutoSize = true, Margin = new Padding(10, 8, 4, 0) }); top.Controls.Add(_pool);
+        top.Controls.Add(new Label { Text = "Quét N cầu thủ mạnh nhất", AutoSize = true, Margin = new Padding(10, 8, 4, 0) }); top.Controls.Add(_pool);
         top.Controls.Add(new Label { Text = "Chênh ≥ (triệu)", AutoSize = true, Margin = new Padding(10, 8, 4, 0) }); top.Controls.Add(_minGain);
         top.Controls.Add(_sort);
         top.Controls.Add(_kind);
@@ -141,7 +141,7 @@ public sealed class MarketScanDialog : Form
         var db = await LocalPlayerDb.GetAsync();
         if (db == null) { _status.Text = "Không đọc được dữ liệu cầu thủ trong thư mục game."; return; }
         var cands = db.All.Where(r => r.Overall > 1 && (season == 0 ? _seasons.Contains((int)(r.Spid / 1_000_000)) : r.Spid / 1_000_000 == season)).OrderByDescending(r => r.Overall).ToList();
-        if (season == 0) cands = cands.Take((int)_pool.Value).ToList();
+        cands = cands.Take((int)_pool.Value).ToList();   // only the strongest N cards are scanned (each one costs a few market requests)
         bool tradeOnly = _kind.SelectedIndex == 0;
         var found = new List<Row>();
         int done = 0;
