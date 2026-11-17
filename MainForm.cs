@@ -793,12 +793,12 @@ public sealed class MainForm : Form
         var used = new HashSet<long>();
         int cycle = 0, shortRuns = 0;
         // background collector: sold cards are claimed within ~40 s all the time (while scanning or waiting); during a run the cycle runner claims them itself
-        var runnerActive = new bool[1];
+        var runnerActive = new int[1];
         var collector = Task.Run(async () =>
         {
             while (!main.IsCancellationRequested)
             {
-                try { await Task.Delay(TimeSpan.FromSeconds(40), main); if (s.Out.SellMode && s.Out.AutoCollect && !Volatile.Read(ref runnerActive[0])) await AutoCollectSoldAsync(api, used, main); }
+                try { await Task.Delay(TimeSpan.FromSeconds(40), main); if (s.Out.SellMode && s.Out.AutoCollect && Volatile.Read(ref runnerActive[0]) == 0) await AutoCollectSoldAsync(api, used, main); }
                 catch (OperationCanceledException) { break; }
                 catch (Exception ex) { Log("[Tự quét/Nhận tiền] Lỗi: " + ex.Message); }
             }
@@ -820,55 +820,81 @@ public sealed class MainForm : Form
                 foreach (var c in list.Take(5))
                     Log($"[Tự quét] {await PlayerNames.DescribeAsync(c.Spid)} lên +{c.Target}: vốn {c.Cost:N0} ({c.Cards} thẻ +1), {c.Basis} {c.Ask:N0}, nhận về ≈{c.TakeHome:N0}, lãi ≈{c.Profit:N0} ({c.Pct:P1}).");
                 long ep = api.LastWallet?.Ep ?? 0;
-                var best = list.FirstOrDefault(c => c.Pct >= s.MinPct && c.Cost <= ep - s.StopBelowEp);
-                if (best == null)
+                // candidates that pass both thresholds, best first (by absolute profit or by %), then as many different players as the budget and the parallel limit allow
+                var ranked = list.Where(c => c.Pct >= s.MinPct && c.Profit >= s.MinProfit);
+                ranked = s.RankByProfit ? ranked.OrderByDescending(c => c.Profit) : ranked.OrderByDescending(c => c.Pct);
+                var chosen = new List<AutoCandidate>();
+                long budget = ep - s.StopBelowEp;
+                foreach (var c in ranked)
                 {
-                    Log($"[Tự quét] Không có phương án nào lãi từ {s.MinPct:P0} (hoặc đủ EP). Chờ chu kỳ sau.");
+                    if (chosen.Count >= Math.Max(1, s.Parallel)) break;
+                    if (chosen.Any(x => x.Spid == c.Spid) || c.Cost > budget) continue;
+                    chosen.Add(c); budget -= c.Cost;
+                }
+                if (chosen.Count == 0)
+                {
+                    Log($"[Tự quét] Không có phương án nào lãi từ {s.MinPct:P0} và {s.MinProfit:N0} EP mỗi thẻ (hoặc đủ EP). Chờ chu kỳ sau.");
                     _upgrade.SetProgress(0, 1, "Không có phương án đủ lãi, chờ quét lại...");
                     var wait = interval - (DateTime.UtcNow - started);
                     if (wait > TimeSpan.Zero) await Task.Delay(wait, main);
                     continue;
                 }
 
-                lock (used) used.Add(best.Spid);
-                var plan = new UpgradePlan(best.Spid, $"SPID {best.Spid}", 0, 0, best.Target, s.Rules, false, s.Pace, false, s.Out.AutoCollect);
-                plan = await WithCeilingAsync(plan);
-                var opt = s.Out with { MaxLossRounds = s.MaxLossRounds };
-                var pname = await PlayerNames.DescribeAsync(best.Spid);
-                _upgrade.ShowPlayer(best.Spid, pname);
-                Log($"[Tự quét] CHỌN: {pname} lên +{best.Target} (lãi ước tính {best.Pct:P1} trên vốn {best.Cost:N0}). Chạy trong chu kỳ này.");
-
-                // the player's session is never cut at the time mark: at the mark the runner winds down (finishes the cards under way) and only then do we scan again
                 var window = interval - (DateTime.UtcNow - started);
                 if (window < TimeSpan.FromMinutes(3)) window = TimeSpan.FromMinutes(3);
                 using var hard = CancellationTokenSource.CreateLinkedTokenSource(main);
                 _upgrade.ResetSteps();
-                var runner = new CycleRunner(api, Log, _upgrade.SetStepState, _upgrade.SetProgress, _upgrade.ResetSteps);
+                var runners = new List<CycleRunner>();
+                var jobs = new List<Task>();
+                int early = 0, finished = 0;
+                for (int i = 0; i < chosen.Count; i++)
+                {
+                    var best = chosen[i];
+                    lock (used) used.Add(best.Spid);
+                    var plan = new UpgradePlan(best.Spid, $"SPID {best.Spid}", 0, 0, best.Target, s.Rules, false, s.Pace, false, s.Out.AutoCollect);
+                    plan = await WithCeilingAsync(plan);
+                    var opt = s.Out with { MaxLossRounds = s.MaxLossRounds };
+                    var pname = await PlayerNames.DescribeAsync(best.Spid);
+                    if (i == 0) _upgrade.ShowPlayer(best.Spid, pname);   // the progress bar and steps show the first player only
+                    Log($"[Tự quét] CHỌN {i + 1}/{chosen.Count}: {pname} lên +{best.Target} (lãi ước tính {best.Profit:N0} mỗi thẻ = {best.Pct:P1} trên vốn {best.Cost:N0}).");
+                    var runner = i == 0
+                        ? new CycleRunner(api, Log, _upgrade.SetStepState, _upgrade.SetProgress, _upgrade.ResetSteps)
+                        : new CycleRunner(api, Log, (_, _) => { }, (_, _, _) => { }, () => { });
+                    runners.Add(runner);
+                    int idx = i;
+                    jobs.Add(Task.Run(async () =>
+                    {
+                        try
+                        {
+                            var reason = await runner.RunAsync(plan, opt, hard.Token);
+                            Log($"[Tự quét] Kết thúc phiên {pname}: " + reason);
+                            if (!runner.Draining) Interlocked.Increment(ref early);
+                        }
+                        catch (OperationCanceledException) { Log($"[Tự quét] Phiên {pname} bị dừng."); Interlocked.Increment(ref early); }
+                        catch (Exception ex) { Log($"[Tự quét] Phiên {pname} lỗi: {ex.Message}"); Interlocked.Increment(ref early); }
+                        finally { Interlocked.Increment(ref finished); }
+                    }));
+                }
+                Interlocked.Exchange(ref runnerActive[0], jobs.Count);
+                // the players' sessions are never cut at the time mark: at the mark every runner winds down (finishes the cards under way) and only then do we scan again
                 var drainTimer = Task.Run(async () =>
                 {
                     try
                     {
                         await Task.Delay(window, hard.Token);
-                        runner.BeginDrain();
+                        foreach (var r in runners) r.BeginDrain();
                         await Task.Delay(TimeSpan.FromMinutes(25), hard.Token);   // safety net: a session that does not wind down within 25 minutes is stopped
                         Log("[Tự quét] Phiên không kết thúc được sau 25 phút kể từ giờ hết chu kỳ, dừng lượt chạy này.");
                         hard.Cancel();
                     }
                     catch (OperationCanceledException) { }
                 });
-                try
-                {
-                    Volatile.Write(ref runnerActive[0], true);
-                    string reason;
-                    try { reason = await runner.RunAsync(plan, opt, hard.Token); }
-                    finally { Volatile.Write(ref runnerActive[0], false); }
-                    Log("[Tự quét] Kết thúc phiên: " + reason);
-                    if (runner.Draining) shortRuns = 0; else shortRuns++;
-                }
-                catch (OperationCanceledException) when (!main.IsCancellationRequested) { Log("[Tự quét] Lượt chạy bị dừng, quét lại."); shortRuns++; }
-                finally { hard.Cancel(); try { await drainTimer; } catch { } }
-                if (shortRuns >= 3) { Log("[Tự quét] Phiên kết thúc sớm 3 lần liên tiếp (hết EP, lỗ hoặc lỗi), dừng chế độ tự quét."); break; }
-                if (!runner.Draining)
+                try { await Task.WhenAll(jobs); }
+                finally { Interlocked.Exchange(ref runnerActive[0], 0); hard.Cancel(); try { await drainTimer; } catch { } }
+                bool allEarly = early >= jobs.Count;
+                if (allEarly) shortRuns++; else shortRuns = 0;
+                if (shortRuns >= 3) { Log("[Tự quét] Mọi phiên kết thúc sớm 3 lần liên tiếp (hết EP, lỗ hoặc lỗi), dừng chế độ tự quét."); break; }
+                if (allEarly)
                 {
                     var rest = interval - (DateTime.UtcNow - started);   // an early end: do not rescan in a tight loop
                     if (rest > TimeSpan.Zero && !main.IsCancellationRequested) await Task.Delay(rest, main);

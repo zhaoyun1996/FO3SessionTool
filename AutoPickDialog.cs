@@ -7,6 +7,9 @@ public sealed class AutoPickDialog : Form
     private readonly DarkNumber _interval = new() { Minimum = 3, Maximum = 240, Value = 10, Width = 90 };
     private readonly DarkNumber _pool = new() { Minimum = 20, Maximum = 3000, Value = 400, Width = 90, Increment = 50 };
     private readonly DarkNumber _loss = new() { Minimum = 1, Maximum = 50, Value = 3, Width = 90 };
+    private readonly DarkNumber _parallel = new() { Minimum = 1, Maximum = 8, Value = 3, Width = 90 };
+    private readonly DarkNumber _minProfit = new() { Minimum = 0, Maximum = 5000, Value = 20, Width = 90, Increment = 10 };
+    private readonly DarkCheck _rankProfit = new() { Text = "Xếp theo lãi tuyệt đối (tắt = xếp theo %)", Checked = true, AutoSize = true };
     private readonly DarkTextBox _seasonsBox = new() { Width = 250 };
     private readonly DarkButton _ok = new() { Text = "Bắt đầu", Width = 120, Tag = "primary", DialogResult = DialogResult.OK };
     private readonly DarkButton _cancel = new() { Text = "Hủy", Width = 90, DialogResult = DialogResult.Cancel };
@@ -22,7 +25,7 @@ public sealed class AutoPickDialog : Form
             var typed = new HashSet<int>();
             foreach (var part in _seasonsBox.Text.Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries))
                 if (int.TryParse(part, out var n) && n > 0) typed.Add(n);
-            return new(true, false, (double)_minPct.Value / 100.0, (int)_interval.Value, (int)_pool.Value, typed.Count > 0 ? typed : null, _pace, _rules, (int)_loss.Value, _out);
+            return new(true, false, (double)_minPct.Value / 100.0, (int)_interval.Value, (int)_pool.Value, typed.Count > 0 ? typed : null, _pace, _rules, (int)_loss.Value, _out, (int)_parallel.Value, (long)_minProfit.Value * 1_000_000L, _rankProfit.Checked);
         }
     }
 
@@ -31,7 +34,7 @@ public sealed class AutoPickDialog : Form
         _pace = pace; _rules = rules; _out = output;
         Text = "Tự quét cầu thủ lãi nhất rồi ép lên +6";
         FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = false; MinimizeBox = false; ShowInTaskbar = false;
-        StartPosition = FormStartPosition.CenterParent; Font = Theme.Body; ClientSize = new Size(660, 470);
+        StartPosition = FormStartPosition.CenterParent; Font = Theme.Body; ClientSize = new Size(660, 560);
         try { Icon = Icon.ExtractAssociatedIcon(Environment.ProcessPath!); } catch { }
 
         var info = new Label
@@ -51,6 +54,9 @@ public sealed class AutoPickDialog : Form
             c.Anchor = AnchorStyles.Left; t.Controls.Add(c, 1, row++);
         }
         Add("Lãi tối thiểu để chạy (% vốn)", _minPct);
+        Add("Số cầu thủ chạy song song", _parallel);
+        Add("Lãi tối thiểu mỗi thẻ (triệu EP)", _minProfit);
+        Add("Cách xếp hạng", _rankProfit);
         Add("Quét lại sau mỗi (phút)", _interval);
         Add("Số cầu thủ mạnh nhất để quét", _pool);
         Add("Dừng sau số thẻ lỗ / không đáng bán liên tiếp", _loss);

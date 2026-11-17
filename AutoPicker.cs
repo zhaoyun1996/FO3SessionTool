@@ -10,7 +10,8 @@ public sealed record AutoCandidate(long Spid, int Overall, int Target, int Cards
 /// <summary>Settings of the auto mode (scan, pick the most profitable player at +6 / +7, buy and merge for one window, scan again).
 /// What happens to a card once merged (sell / trade / keep, collecting the money) is the tab's own output choice, carried in Out.</summary>
 public sealed record AutoSettings(bool Use6, bool Use7, double MinPct, int IntervalMinutes, int PoolSize, IReadOnlySet<int>? Seasons, double Pace,
-    IReadOnlyDictionary<int, (int A, int B)> Rules, int MaxLossRounds, CycleOptions Out)
+    IReadOnlyDictionary<int, (int A, int B)> Rules, int MaxLossRounds, CycleOptions Out,
+    int Parallel = 1, long MinProfit = 0, bool RankByProfit = false)
 {
     public long StopBelowEp => Out.StopBelowEp;
 }
