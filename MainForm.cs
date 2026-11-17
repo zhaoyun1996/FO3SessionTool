@@ -835,6 +835,7 @@ public sealed class MainForm : Form
                 plan = await WithCeilingAsync(plan);
                 var opt = s.Out with { MaxLossRounds = s.MaxLossRounds };
                 var pname = await PlayerNames.DescribeAsync(best.Spid);
+                _upgrade.ShowPlayer(best.Spid, pname);
                 Log($"[Tự quét] CHỌN: {pname} lên +{best.Target} (lãi ước tính {best.Pct:P1} trên vốn {best.Cost:N0}). Chạy trong chu kỳ này.");
 
                 // the player's session is never cut at the time mark: at the mark the runner winds down (finishes the cards under way) and only then do we scan again

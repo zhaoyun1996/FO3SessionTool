@@ -100,6 +100,19 @@ public sealed class UpgradeTab : UserControl
         await SearchAsync(dlg.PickedName);
     }
 
+    /// <summary>Shows a player (picked by the auto mode) in the player box: fills the name and selects that exact card in the result list.</summary>
+    public async void ShowPlayer(long spid, string describe)
+    {
+        try
+        {
+            string name = describe.Contains(" - ") ? describe[..describe.IndexOf(" - ", StringComparison.Ordinal)] : describe;
+            _wantSpid = spid;
+            _name.Text = name;
+            await SearchAsync(name);
+        }
+        catch { }
+    }
+
     private void PickPreferred()
     {
         var seasons = _players.AllowedSeasons?.Where(s => s > 0) ?? PlayerSearch.SeasonSpriteX.Keys.Where(s => s > 0);

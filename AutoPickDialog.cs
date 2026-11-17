@@ -50,7 +50,6 @@ public sealed class AutoPickDialog : Form
             t.Controls.Add(new Label { Text = label, AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, row);
             c.Anchor = AnchorStyles.Left; t.Controls.Add(c, 1, row++);
         }
-        Add("Mức đích", new Label { Text = "+6 (không ép +7 vì chỉ thành công 60%)", AutoSize = true });
         Add("Lãi tối thiểu để chạy (% vốn)", _minPct);
         Add("Quét lại sau mỗi (phút)", _interval);
         Add("Số cầu thủ mạnh nhất để quét", _pool);
