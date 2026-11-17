@@ -19,6 +19,7 @@ public sealed class MarketScanDialog : Form
     private readonly PlayerSearch _players;
     private readonly DarkCombo _season = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 260 };
     private readonly DarkCombo _level = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 70 };
+    private readonly DarkCombo _kind = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 250 };
     private readonly DarkCombo _sort = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 170 };
     private readonly DarkNumber _pool = new() { Minimum = 20, Maximum = 3000, Value = 400, Increment = 50, Width = 80 };
     private readonly DarkNumber _minGain = new() { Minimum = 0, Maximum = 100000, Value = 0, Increment = 10, Width = 80 };
@@ -43,13 +44,14 @@ public sealed class MarketScanDialog : Form
         MinimizeBox = false; ShowInTaskbar = false;
         StartPosition = FormStartPosition.CenterParent;
         Font = Theme.Body;
-        ClientSize = new Size(1000, 600);
+        ClientSize = new Size(1200, 640);
         try { Icon = Icon.ExtractAssociatedIcon(Environment.ProcessPath!); } catch { }
 
         _season.Items.Add("Tất cả mùa (theo độ mạnh)");
         foreach (var s in _seasons) _season.Items.Add($"Mùa {s} · {seasonName(s)}");
         _season.SelectedIndex = _seasons.IndexOf(defaultSeason) + 1;
         _level.Items.AddRange(new object[] { "+4", "+5", "+6" }); _level.SelectedIndex = 1;
+        _kind.Items.AddRange(new object[] { "Giao dịch (chỉ thẻ đổi ≤ 1 tỷ)", "Bán (hiện tất cả)" }); _kind.SelectedIndex = 0;
         _sort.Items.AddRange(new object[] { "Xếp theo tỷ lệ", "Xếp theo chênh lệch" }); _sort.SelectedIndex = 1;
 
         var top = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 78, Padding = new Padding(8, 6, 8, 0), WrapContents = true };
@@ -59,6 +61,7 @@ public sealed class MarketScanDialog : Form
         top.Controls.Add(new Label { Text = "Quét top", AutoSize = true, Margin = new Padding(10, 8, 4, 0) }); top.Controls.Add(_pool);
         top.Controls.Add(new Label { Text = "Chênh ≥ (triệu)", AutoSize = true, Margin = new Padding(10, 8, 4, 0) }); top.Controls.Add(_minGain);
         top.Controls.Add(_sort);
+        top.Controls.Add(_kind);
         _btnScan.Margin = new Padding(12, 2, 3, 3); _btnPick.Margin = new Padding(12, 2, 3, 3);
         top.Controls.Add(_btnScan); top.Controls.Add(_btnPick);
 
@@ -82,16 +85,16 @@ public sealed class MarketScanDialog : Form
                 DefaultCellStyle = new DataGridViewCellStyle { Alignment = left ? DataGridViewContentAlignment.MiddleLeft : DataGridViewContentAlignment.MiddleRight },
             });
         Col("name", "Cầu thủ", 200, true, true);
-        Col("ovr", "Chỉ số", 60);
-        Col("d1", "Giá mặc định +1", 120);
-        Col("cheap", "+1 rẻ nhất", 110);
-        Col("sale", "Số thẻ +1 bán", 100);
-        Col("cards", "Thẻ/lần", 70);
-        Col("cost", "Vốn mỗi lần", 130);
-        Col("value", "Giá trị đổi", 130);
-        Col("gain", "Chênh lệch", 130);
-        Col("ratio", "Tỷ lệ", 70);
-        Col("season", "Mùa", 60);
+        Col("ovr", "Chỉ số", 62);
+        Col("d1", "Giá +1 mặc định", 115);
+        Col("cheap", "+1 rẻ nhất", 100);
+        Col("sale", "+1 đang bán", 90);
+        Col("cards", "Thẻ/lần", 65);
+        Col("cost", "Vốn mỗi lần", 120);
+        Col("value", "Giá trị đổi", 120);
+        Col("gain", "Chênh lệch", 120);
+        Col("ratio", "Tỷ lệ", 65);
+        Col("season", "Mùa", 55);
 
         Controls.Add(_grid); Controls.Add(_status); Controls.Add(info); Controls.Add(top);
         Theme.Apply(this);
@@ -120,14 +123,14 @@ public sealed class MarketScanDialog : Form
         int season = _season.SelectedIndex <= 0 ? 0 : _seasons[Math.Clamp(_season.SelectedIndex - 1, 0, _seasons.Count - 1)];
         int level = 4 + Math.Max(0, _level.SelectedIndex);
         _cts = new CancellationTokenSource();
-        _btnScan.Text = "Dừng"; _season.Enabled = false; _level.Enabled = false; _pool.Enabled = false; _minGain.Enabled = false; _sort.Enabled = false; _btnPick.Enabled = false;
+        _btnScan.Text = "Dừng"; _season.Enabled = false; _level.Enabled = false; _pool.Enabled = false; _minGain.Enabled = false; _sort.Enabled = false; _kind.Enabled = false; _btnPick.Enabled = false;
         _grid.Rows.Clear(); _rows.Clear();
         var ct = _cts.Token;
         try { await ScanAsync(season, level, ct); }
         catch (OperationCanceledException) { _status.Text = "Đã dừng."; }
         catch (Exception ex) { _status.Text = "Lỗi: " + ex.Message; }
         _cts.Dispose(); _cts = null;
-        _btnScan.Text = "Quét"; _season.Enabled = true; _level.Enabled = true; _pool.Enabled = true; _minGain.Enabled = true; _sort.Enabled = true;
+        _btnScan.Text = "Quét"; _season.Enabled = true; _level.Enabled = true; _pool.Enabled = true; _minGain.Enabled = true; _sort.Enabled = true; _kind.Enabled = true;
         _btnPick.Enabled = _grid.CurrentRow != null && _rows.Count > 0;
     }
 
@@ -139,6 +142,7 @@ public sealed class MarketScanDialog : Form
         if (db == null) { _status.Text = "Không đọc được dữ liệu cầu thủ trong thư mục game."; return; }
         var cands = db.All.Where(r => r.Overall > 1 && (season == 0 ? _seasons.Contains((int)(r.Spid / 1_000_000)) : r.Spid / 1_000_000 == season)).OrderByDescending(r => r.Overall).ToList();
         if (season == 0) cands = cands.Take((int)_pool.Value).ToList();
+        bool tradeOnly = _kind.SelectedIndex == 0;
         var found = new List<Row>();
         int done = 0;
         foreach (var r in cands)
@@ -157,7 +161,8 @@ public sealed class MarketScanDialog : Form
                 catch (OperationCanceledException) { throw; } catch { }
                 if (p1 != null && p5 != null && p5.Lower > 0)
                 {
-                    long v5 = p5.Lower * 5 / 4;                          // the game's value of a +5 card = 1.25 x floor price
+                    long v5 = p5.Lower * 5 / 4; if (tradeOnly && v5 > TradeMax) { await Pacing.Wait(0.06, 0.16, 1.0, ct); continue; }   // a trade card is worth at most 1B
+                                             // the game's value of a +5 card = 1.25 x floor price
                     int k = (int)Math.Max(1, TradeMax / Math.Max(1, v5)); // +5 cards that fit in one trade
                     k = Math.Min(k, ask.Count / Needed);
                     long cost = ask.Take(k * Needed).Sum();
