@@ -22,6 +22,8 @@ public sealed class UpgradeTab : UserControl
     // player
     private readonly DarkTextBox _name = new() { Anchor = AnchorStyles.Left | AnchorStyles.Right, PlaceholderText = "Tên cầu thủ, ví dụ: ronaldo" };
     private readonly DarkButton _btnFind = new() { Text = "Tìm", Anchor = AnchorStyles.Left | AnchorStyles.Right };
+    private readonly DarkButton _btnScan = new() { Text = "Quét thị trường", Anchor = AnchorStyles.Left | AnchorStyles.Right };
+    private long _wantSpid;   // card to select once the next search finishes
     private readonly DarkCombo _results = new() { Anchor = AnchorStyles.Left | AnchorStyles.Right, CustomItems = true };
     private Bitmap? _sprite;   // season badge sprite (badged.png)
     private readonly TextBox _spid = new();   // holds the picked SPID; not shown (the card carries the identity)
@@ -68,6 +70,19 @@ public sealed class UpgradeTab : UserControl
     private string SeasonLabel(int s) { var l = _players.SeasonLabelOf(s); return l.Length > 0 ? $"Mùa {s} · {l}" : $"Mùa {s}"; }
     private void UpdatePreferText() =>
         _btnPrefer.Text = _preferSeasons.Count == 0 ? "Không ưu tiên (chọn...)" : "Ưu tiên: " + string.Join(", ", _preferSeasons.OrderBy(x => x).Take(4).Select(s => "M" + s)) + (_preferSeasons.Count > 4 ? $" +{_preferSeasons.Count - 4}" : "");
+    private async void OpenScan()
+    {
+        var api = ApiProvider?.Invoke();
+        if (api == null) { MessageBox.Show("Hãy đăng nhập trước.", "Quét thị trường", MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
+        var seasons = (_players.AllowedSeasons?.Where(s => s > 0) ?? PlayerSearch.SeasonSpriteX.Keys.Where(s => s > 0)).ToList();
+        if (seasons.Count == 0) return;
+        using var dlg = new MarketScanDialog(api, _players, seasons, s => { var l = _players.SeasonLabelOf(s); return l.Length > 0 ? l : "—"; }, seasons.Contains(91) ? 91 : seasons[0]);
+        if (dlg.ShowDialog(FindForm()) != DialogResult.OK || dlg.PickedName.Length == 0) return;
+        _wantSpid = dlg.PickedSpid;
+        _name.Text = dlg.PickedName;
+        await SearchAsync(dlg.PickedName);
+    }
+
     private void PickPreferred()
     {
         var seasons = _players.AllowedSeasons?.Where(s => s > 0) ?? PlayerSearch.SeasonSpriteX.Keys.Where(s => s > 0);
@@ -88,6 +103,9 @@ public sealed class UpgradeTab : UserControl
     /// <summary>Set by the main form: listings of an SPID on the transfer market (for the +1 price on the card).</summary>
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     public Func<long, Task<List<Listing>>>? MarketProvider { get; set; }
+    /// <summary>Set by the main form: the logged-in game API (null while logged out), used by the market scan.</summary>
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public Func<GameApi?>? ApiProvider { get; set; }
 
     private bool StockMode => _modeStock.Checked;
 
@@ -171,10 +189,11 @@ public sealed class UpgradeTab : UserControl
     private Control BuildPlayerBox()
     {
         var box = new DarkGroup { Text = "1. Cầu thủ", Dock = DockStyle.Fill };
-        var t = Grid(3, 3);
+        var t = Grid(4, 3);
         t.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 70));
         t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        t.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 110));
+        t.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 80));
+        t.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
         t.RowStyles.Add(new RowStyle(SizeType.Absolute, Theme.RowH));
         t.RowStyles.Add(new RowStyle(SizeType.Absolute, Theme.RowH));
         t.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
@@ -182,11 +201,14 @@ public sealed class UpgradeTab : UserControl
         t.Controls.Add(Lbl("Tên"), 0, 0);
         t.Controls.Add(_name, 1, 0);
         t.Controls.Add(_btnFind, 2, 0);
+        t.Controls.Add(_btnScan, 3, 0);
+        _btnScan.Click += (_, _) => OpenScan();
+        _tip.SetToolTip(_btnScan, "Xếp hạng các cầu thủ của một mùa theo giá trị đổi / vốn mua cho xoay vòng (chỉ đọc giá chợ).");
         t.Controls.Add(Lbl("Kết quả"), 0, 1);
         t.Controls.Add(_results, 1, 1);
-        t.SetColumnSpan(_results, 2);
+        t.SetColumnSpan(_results, 3);
         t.Controls.Add(_card, 0, 2);
-        t.SetColumnSpan(_card, 3);
+        t.SetColumnSpan(_card, 4);
         box.Controls.Add(t);
         return box;
     }
@@ -460,7 +482,12 @@ public sealed class UpgradeTab : UserControl
             foreach (var p in list) _results.Items.Add(new Item(p));
             SetStatus(list.Count == 0 ? $"Không tìm thấy \"{name}\"." : $"{list.Count} cầu thủ cho \"{name}\". Chọn một người trong danh sách.", Theme.Dim);
             _log($"[Tìm cầu thủ] \"{name}\": {list.Count} kết quả.");
-            if (list.Count > 0) _results.SelectedIndex = 0;
+            if (list.Count > 0)
+            {
+                int want = _wantSpid == 0 ? -1 : list.FindIndex(p => p.Spid == _wantSpid);
+                _results.SelectedIndex = want >= 0 ? want : 0;
+            }
+            _wantSpid = 0;
         }
         catch (Exception ex) { SetStatus("Lỗi tìm cầu thủ: " + ex.Message, Theme.Danger); _log("[Tìm cầu thủ] LỖI: " + ex.Message); }
         finally { _btnFind.Enabled = true; }

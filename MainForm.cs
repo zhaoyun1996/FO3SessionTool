@@ -108,6 +108,7 @@ public sealed class MainForm : Form
         _upgrade = new UpgradeTab(_players, Log);
         _upgrade.InventoryProvider = () => _api == null ? Task.FromResult(new List<GameApi.OwnedCard>()) : _api.GetInventoryAsync();
         _upgrade.MarketProvider = spid => _api == null ? Task.FromResult(new List<Listing>()) : _api.SearchAsync(spid);
+        _upgrade.ApiProvider = () => _api;
         _upgrade.RunRequested += OnUpgradeRun;
         _upgrade.CycleRequested += OnCycleRun;
         _upgrade.StopRequested += () => { _upCts?.Cancel(); Log("[Ép thẻ] Đang dừng..."); };
