@@ -223,7 +223,7 @@ public sealed class UpgradeTab : UserControl
         t.Controls.Add(_btnScan, 3, 0);
         t.Controls.Add(_btnAuto, 4, 0);
         _btnAuto.Click += (_, _) => OpenAuto();
-        _tip.SetToolTip(_btnAuto, "Tự quét thị trường, chọn cầu thủ lãi nhất khi ép +6/+7 rồi bán cho hệ thống ở giá gợi ý, lặp lại sau mỗi chu kỳ. Nút Dừng dừng cả vòng lặp.");
+        _tip.SetToolTip(_btnAuto, "Tự quét thị trường, chọn cầu thủ lãi nhất khi ép lên +6, phần sau ép theo các ô của tab, lặp lại sau mỗi chu kỳ. Nút Dừng dừng cả vòng lặp.");
         _btnScan.Click += (_, _) => OpenScan();
         _tip.SetToolTip(_btnScan, "Xếp hạng các cầu thủ của một mùa theo giá trị đổi / vốn mua cho xoay vòng (chỉ đọc giá chợ).");
         t.Controls.Add(Lbl("Kết quả"), 0, 1);

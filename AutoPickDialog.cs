@@ -3,8 +3,6 @@ namespace FO3SessionTool;
 /// <summary>Settings of the auto mode: every cycle it scans the market, picks the most profitable player to build to +6 / +7 and sell to the system, and runs for the interval.</summary>
 public sealed class AutoPickDialog : Form
 {
-    private readonly DarkCheck _use6 = new() { Text = "Ép đến +6", Checked = true, AutoSize = true };
-    private readonly DarkCheck _use7 = new() { Text = "Ép đến +7", Checked = true, AutoSize = true };
     private readonly DarkNumber _minPct = new() { Minimum = 0, Maximum = 200, Value = 5, Width = 90 };
     private readonly DarkNumber _interval = new() { Minimum = 3, Maximum = 240, Value = 10, Width = 90 };
     private readonly DarkNumber _pool = new() { Minimum = 20, Maximum = 3000, Value = 400, Width = 90, Increment = 50 };
@@ -24,14 +22,14 @@ public sealed class AutoPickDialog : Form
             var typed = new HashSet<int>();
             foreach (var part in _seasonsBox.Text.Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries))
                 if (int.TryParse(part, out var n) && n > 0) typed.Add(n);
-            return new(_use6.Checked, _use7.Checked, (double)_minPct.Value / 100.0, (int)_interval.Value, (int)_pool.Value, typed.Count > 0 ? typed : null, _pace, _rules, (int)_loss.Value, _out);
+            return new(true, false, (double)_minPct.Value / 100.0, (int)_interval.Value, (int)_pool.Value, typed.Count > 0 ? typed : null, _pace, _rules, (int)_loss.Value, _out);
         }
     }
 
     public AutoPickDialog(string outputText, double pace, IReadOnlyDictionary<int, (int A, int B)> rules, CycleOptions output)
     {
         _pace = pace; _rules = rules; _out = output;
-        Text = "Tự quét cầu thủ lãi nhất rồi ép và bán";
+        Text = "Tự quét cầu thủ lãi nhất rồi ép lên +6";
         FormBorderStyle = FormBorderStyle.FixedDialog; MaximizeBox = false; MinimizeBox = false; ShowInTaskbar = false;
         StartPosition = FormStartPosition.CenterParent; Font = Theme.Body; ClientSize = new Size(660, 470);
         try { Icon = Icon.ExtractAssociatedIcon(Environment.ProcessPath!); } catch { }
@@ -39,7 +37,7 @@ public sealed class AutoPickDialog : Form
         var info = new Label
         {
             Dock = DockStyle.Top, Height = 140, Padding = new Padding(12, 10, 12, 0),
-            Text = "Mỗi chu kỳ: tool quét giá chợ, chọn cầu thủ có lãi cao nhất khi mua thẻ +1 rẻ nhất rồi ép lên +6 / +7, chạy hết thời gian chu kỳ, rồi quét lại. " +
+            Text = "Mỗi chu kỳ: tool quét giá chợ, chọn cầu thủ có lãi cao nhất khi mua thẻ +1 rẻ nhất rồi ép lên +6, chạy hết thời gian chu kỳ, rồi quét lại. " +
                    "Tự quét chỉ lo đầu vào và ép. Sau khi ép xong làm gì (bán, giao dịch, giữ thẻ, nhận tiền, dừng khi EP dưới) theo đúng các ô ở tab: " + outputText + ". " +
                    "Luật ghép, tốc độ và mức EP dừng của tab cũng được dùng. Thẻ ép dở của cầu thủ cũ vẫn nằm trong kho.",
         };
@@ -52,8 +50,7 @@ public sealed class AutoPickDialog : Form
             t.Controls.Add(new Label { Text = label, AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, row);
             c.Anchor = AnchorStyles.Left; t.Controls.Add(c, 1, row++);
         }
-        var lv = new FlowLayoutPanel { AutoSize = true, WrapContents = false }; lv.Controls.Add(_use6); lv.Controls.Add(_use7);
-        Add("Mức đích", lv);
+        Add("Mức đích", new Label { Text = "+6 (không ép +7 vì chỉ thành công 60%)", AutoSize = true });
         Add("Lãi tối thiểu để chạy (% vốn)", _minPct);
         Add("Quét lại sau mỗi (phút)", _interval);
         Add("Số cầu thủ mạnh nhất để quét", _pool);
@@ -68,11 +65,6 @@ public sealed class AutoPickDialog : Form
         Theme.Apply(this);
         _ok.Click += (_, _) =>
         {
-            if (!_use6.Checked && !_use7.Checked)
-            {
-                MessageBox.Show("Chọn ít nhất một mức đích.", Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                DialogResult = DialogResult.None;
-            }
         };
     }
 }
